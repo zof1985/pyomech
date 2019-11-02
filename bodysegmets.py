@@ -2,10 +2,17 @@
 
 import numpy as np
 from utils import classcheck
+from vectors import Vector
 
 
+"""
+The following coefficients corresponds to those described by de Leva (1996) in his Table 4 and are used to estimate
+the mass, the Centre of Mass (CoM) position and the gyration radius around each rotation axis.
 
-# de Leva (1996) references
+Reference:
+    de Leva P. (1996) Adjustments to Zatiorsky-Seluyanov's segment inertia parameters. Journal of Biomechanics,
+        29(9):1223-30
+"""
 
 segments = {
 
@@ -14,16 +21,16 @@ segments = {
         'male':{
             'mass': 0.694,
             'CoM': 0.5002,
-            'rad_gyr_ap': 0.303,
-            'rad_gyr_ml': 0.315,
-            'rad_gyr_vt': 0.261
+            'gyration_radius_ap': 0.303,
+            'gyration_radius_ml': 0.315,
+            'gyration_radius_vt': 0.261
             },
         'female':{
             'mass': 0.668,
             'CoM': 0.4841,
-            'rad_gyr_ap': 0.271,
-            'rad_gyr_ml': 0.295,
-            'rad_gyr_vt': 0.263
+            'gyration_radius_ap': 0.271,
+            'gyration_radius_ml': 0.295,
+            'gyration_radius_vt': 0.263
             }
         },
 
@@ -32,16 +39,16 @@ segments = {
         'male':{
             'mass': 0.4346,
             'CoM': 0.5138,
-            'rad_gyr_ap': 0.328,
-            'rad_gyr_ml': 0.306,
-            'rad_gyr_vt': 0.169
+            'gyration_radius_ap': 0.328,
+            'gyration_radius_ml': 0.306,
+            'gyration_radius_vt': 0.169
             },
         'female':{
             'mass': 42.57,
             'CoM': 0.4964,
-            'rad_gyr_ap': 0.307,
-            'rad_gyr_ml': 0.292,
-            'rad_gyr_vt': 0.147
+            'gyration_radius_ap': 0.307,
+            'gyration_radius_ml': 0.292,
+            'gyration_radius_vt': 0.147
             }
         },
     
@@ -50,16 +57,16 @@ segments = {
         'male':{
             'mass': 0.0271,
             'CoM': 0.5772,
-            'rad_gyr_ap': 0.285,
-            'rad_gyr_ml': 0.269,
-            'rad_gyr_vt': 0.158
+            'gyration_radius_ap': 0.285,
+            'gyration_radius_ml': 0.269,
+            'gyration_radius_vt': 0.158
             },
         'female':{
             'mass': 0.0255,
             'CoM': 0.5754,
-            'rad_gyr_ap': 0.278,
-            'rad_gyr_ml': 0.260,
-            'rad_gyr_vt': 0.148
+            'gyration_radius_ap': 0.278,
+            'gyration_radius_ml': 0.260,
+            'gyration_radius_vt': 0.148
             }
         },
     
@@ -68,16 +75,16 @@ segments = {
         'male':{
             'mass': 0.0162,
             'CoM': 0.4574,
-            'rad_gyr_ap': 0.276,
-            'rad_gyr_ml': 0.265,
-            'rad_gyr_vt': 0.121
+            'gyration_radius_ap': 0.276,
+            'gyration_radius_ml': 0.265,
+            'gyration_radius_vt': 0.121
             },
         'female':{
             'mass': 0.0138,
             'CoM': 0.4559,
-            'rad_gyr_ap': 0.261,
-            'rad_gyr_ml': 0.257,
-            'rad_gyr_vt': 0.094
+            'gyration_radius_ap': 0.261,
+            'gyration_radius_ml': 0.257,
+            'gyration_radius_vt': 0.094
             }
         },
     
@@ -86,16 +93,16 @@ segments = {
         'male':{
             'mass': 0.061,
             'CoM': 0.7900,
-            'rad_gyr_ap': 0.628,
-            'rad_gyr_ml': 0.513,
-            'rad_gyr_vt': 0.401
+            'gyration_radius_ap': 0.628,
+            'gyration_radius_ml': 0.513,
+            'gyration_radius_vt': 0.401
             },
         'female':{
             'mass': 0.056,
             'CoM': 0.7474,
-            'rad_gyr_ap': 0.531,
-            'rad_gyr_ml': 0.454,
-            'rad_gyr_vt': 0.335
+            'gyration_radius_ap': 0.531,
+            'gyration_radius_ml': 0.454,
+            'gyration_radius_vt': 0.335
             }
         },
     
@@ -104,16 +111,16 @@ segments = {
         'male':{
             'mass': 0.1416,
             'CoM': 0.4095,
-            'rad_gyr_ap': 0.329,
-            'rad_gyr_ml': 0.329,
-            'rad_gyr_vt': 0.149
+            'gyration_radius_ap': 0.329,
+            'gyration_radius_ml': 0.329,
+            'gyration_radius_vt': 0.149
             },
         'female':{
             'mass': 0.1478,
             'CoM': 0.3612,
-            'rad_gyr_ap': 0.369,
-            'rad_gyr_ml': 0.364,
-            'rad_gyr_vt': 0.162
+            'gyration_radius_ap': 0.369,
+            'gyration_radius_ml': 0.364,
+            'gyration_radius_vt': 0.162
             }
         },
     
@@ -122,16 +129,16 @@ segments = {
         'male':{
             'mass': 0.0432,
             'CoM': 0.4459,
-            'rad_gyr_ap': 0.255,
-            'rad_gyr_ml': 0.249,
-            'rad_gyr_vt': 0.103
+            'gyration_radius_ap': 0.255,
+            'gyration_radius_ml': 0.249,
+            'gyration_radius_vt': 0.103
             },
         'female':{
             'mass': 0.0481,
             'CoM': 0.4416,
-            'rad_gyr_ap': 0.271,
-            'rad_gyr_ml': 0.267,
-            'rad_gyr_vt': 0.093
+            'gyration_radius_ap': 0.271,
+            'gyration_radius_ml': 0.267,
+            'gyration_radius_vt': 0.093
             }
         },
     
@@ -140,16 +147,16 @@ segments = {
         'male':{
             'mass': 0.0137,
             'CoM': 0.4415,
-            'rad_gyr_ap': 0.257,
-            'rad_gyr_ml': 0.245,
-            'rad_gyr_vt': 0.124
+            'gyration_radius_ap': 0.257,
+            'gyration_radius_ml': 0.245,
+            'gyration_radius_vt': 0.124
             },
         'female':{
             'mass': 0.0129,
             'CoM': 0.4014,
-            'rad_gyr_ap': 0.299,
-            'rad_gyr_ml': 0.279,
-            'rad_gyr_vt': 0.139
+            'gyration_radius_ap': 0.299,
+            'gyration_radius_ml': 0.279,
+            'gyration_radius_vt': 0.139
             }
         }
     }
@@ -211,8 +218,15 @@ class BodySegment():
         self.weight = weight
         self.gender = 'male' if male else 'female'
         self.what = what
-        for i in segments[what][self.gender]:
-            if i != 'Mass':
-                setattr(self, i, (end - origin) * segments[what][self.gender][i] + origin)
-            else:
-                setattr(self, i, self.weight * segments[what][self.gender][i])
+        self.length = (origin - end).module()
+
+        # get the specific parameters for the current segment according to de Leva (1996)
+        self.mass =  self.weight * segments[what][self.gender]['mass']
+        self.CoM = (end - origin) * segments[what][self.gender]['CoM'] + origin
+        I = {
+            'AP': (self.length.values.flatten() * segments[what][self.gender]['gyration_radius_ap']) ** 2 * self.mass,
+            'ML': (self.length.values.flatten() * segments[what][self.gender]['gyration_radius_ml']) ** 2 * self.mass,
+            'VT': (self.length.values.flatten() * segments[what][self.gender]['gyration_radius_ml']) ** 2 * self.mass
+            }
+        idx = self.length.index.to_numpy()
+        self.inertia = Vector(I, idx, self.length.xunit, self.length.dunit, 'Moment of inertia')
