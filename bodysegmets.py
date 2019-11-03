@@ -6,11 +6,11 @@ from vectors import Vector
 
 
 """
-The following coefficients corresponds to those described by de Leva (1996) in his Table 4 and are used to estimate
+The following coefficients corresponds to those described by de Leva (1996a) in his Table 4 and are used to estimate
 the mass, the Centre of Mass (CoM) position and the gyration radius around each rotation axis.
 
 Reference:
-    de Leva P. (1996) Adjustments to Zatiorsky-Seluyanov's segment inertia parameters. Journal of Biomechanics,
+    de Leva P. (1996a) Adjustments to Zatiorsky-Seluyanov's segment inertia parameters. Journal of Biomechanics,
         29(9):1223-30
 """
 
@@ -159,6 +159,25 @@ segments = {
             'gyration_radius_vt': 0.139
             }
         }
+
+    # The whole body "segment" is calculated from the spinous process of the 7th cervical vertebrae to the hips
+    # mid-point.
+    'Whole-body': {
+        'male':{
+            'mass': 1.,
+            'CoM': ,
+            'gyration_radius_ap': ,
+            'gyration_radius_ml': ,
+            'gyration_radius_vt': 
+            },
+        'female':{
+            'mass': 1.,
+            'CoM': ,
+            'gyration_radius_ap': ,
+            'gyration_radius_ml': ,
+            'gyration_radius_vt': 
+            }
+        }
     }
 
 
@@ -230,3 +249,69 @@ class BodySegment():
             }
         idx = self.length.index.to_numpy()
         self.inertia = Vector(I, idx, self.length.xunit, self.length.dunit, 'Moment of inertia')
+
+
+
+"""
+The following coefficients corresponds to those described by de Leva (1996b) in his Table 2 and are used to estimate
+the longitudinal distances of different joint centes according to external markers.
+
+Reference:
+    de Leva P. (1996b) Joint center longitudinal positions computed from a selected subset of Chandler's data.
+        Journal of Biomechanics, 29(9):1231-33
+"""
+
+joints = {
+
+    # The shoulder joint centre is calculated from the acromion to the radial tubercle of the same side.
+    'Shoulder': 0.104,
+
+    # The elbow joint centre is calculated from the acromion to the radial tubercle of the same side.
+    'Elbow': 0.957,
+    
+    # The wrist joint centre is calculated from the radial tubercle to the styloid process of the radius.
+    'Wrist': 1.006,
+
+    # The hip joint centre is calculated from the great throcanter to the tibial process.
+    'Hip': -0.007,
+
+    # The knee joint centre is calculated from the great throcanter to the tibial process.
+    'Knee': 0.926,
+
+    # The ankle joint centre is calculated from the tibial process to the lateral malleoulus.
+    'Ankle': 1.016,
+    }
+
+
+
+def get_jointcentre(origin, end, what):
+    """
+    this method returns a pyomech.Vector object representing the requried joint centre according to de Leva (1996b).
+
+    Input:
+        origin: (3D Vector)
+                the vector with the data defining the position of the origin of the body segment.
+
+        end:    (3D Vector)
+                the vector with the data defining the position of the end of the body segment.
+
+        what:   (str)
+                any of ["Shoulder", "Elbow", "Wrist", "Hip", "Knee", "Ankle"].
+    
+    Output:
+        joint:  (3D Vector)
+                a 3D Vector defining the location of the joint centre.
+    """
+    
+    # Check the entered parameters
+    for i in [origin, end]:
+        classcheck(i, ['Vector'])
+        assert i.shape[1] == 3, "'origin' and 'end' must be a 3D vector."
+    assert np.all([i in origin.df.columns] for i in end.df.columns), "'origin' and 'end' must have the same ndim."
+    same_index = np.sum(np.diff(origin.index.to_numpy() - end.index.to_numpy())) == 0
+    assert same_index, "'origin' and 'end' must have same index."
+    txt = "'what' must by any of the following string: " + [i for i in joints.keys()]
+    assert what.lower() in [i for i in joints.keys()], txt
+    
+    # return the joint centre
+    return (end - origin) * joints[what] + origin
