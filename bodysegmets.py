@@ -158,24 +158,24 @@ segments = {
             'gyration_radius_ml': 0.279,
             'gyration_radius_vt': 0.139
             }
-        }
+        },
 
     # The whole body "segment" is calculated from the spinous process of the 7th cervical vertebrae to the hips
     # mid-point.
     'Whole-body': {
         'male':{
             'mass': 1.,
-            'CoM': ,
-            'gyration_radius_ap': ,
-            'gyration_radius_ml': ,
-            'gyration_radius_vt': 
+            'CoM': 0.5587,
+            'gyration_radius_ap': 1,
+            'gyration_radius_ml': 1,
+            'gyration_radius_vt': 1
             },
         'female':{
             'mass': 1.,
-            'CoM': ,
-            'gyration_radius_ap': ,
-            'gyration_radius_ml': ,
-            'gyration_radius_vt': 
+            'CoM': 0.5577,
+            'gyration_radius_ap': 1,
+            'gyration_radius_ml': 1,
+            'gyration_radius_vt': 1
             }
         }
     }
