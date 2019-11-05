@@ -2,8 +2,7 @@
 
 import numpy as np
 from utils import classcheck
-from vectors import Vector
-
+from pandas import DataFrame
 
 """
 The following coefficients corresponds to those described by de Leva (1996a) in his Table 4 and are used to estimate
@@ -11,13 +10,13 @@ the mass, the Centre of Mass (CoM) position and the gyration radius around each 
 
 Reference:
     de Leva P. (1996a) Adjustments to Zatiorsky-Seluyanov's segment inertia parameters. Journal of Biomechanics,
-        29(9):1223-30
+        29(9):1223-30.
 """
 
 segments = {
 
     # Head segment is calculated from the head vertex to the spinous process of the 7th cervical vertebrae.
-    'Head': {
+    'head': {
         'male':{
             'mass': 0.694,
             'CoM': 0.5002,
@@ -35,7 +34,7 @@ segments = {
         },
 
     # Trunk segment is calculated from the 7th cervical vertebrae and the mid-point between the hips joint center.
-    'Trunk': {
+    'trunk': {
         'male':{
             'mass': 0.4346,
             'CoM': 0.5138,
@@ -53,7 +52,7 @@ segments = {
         },
     
     # The upper-arm segment is calculated from the Shoulder joint center to the elbow joint center of the same side.
-    'Arm': {
+    'arm': {
         'male':{
             'mass': 0.0271,
             'CoM': 0.5772,
@@ -71,7 +70,7 @@ segments = {
         },
     
     # The forearm segment is calculated from the elbow joint center to the wrist joint center of the same side.
-    'Forearm': {
+    'forearm': {
         'male':{
             'mass': 0.0162,
             'CoM': 0.4574,
@@ -89,7 +88,7 @@ segments = {
         },
     
     # The hand segment is calculated from the wrist joint center to the end of the 3rd metacarpale of the same side.
-    'Hand': {
+    'hand': {
         'male':{
             'mass': 0.061,
             'CoM': 0.7900,
@@ -107,7 +106,7 @@ segments = {
         },
     
     # The thigh segment is calculated from the hip joint center to the knee joint center of the same side.
-    'Thigh': {
+    'thigh': {
         'male':{
             'mass': 0.1416,
             'CoM': 0.4095,
@@ -125,7 +124,7 @@ segments = {
         },
     
     # The shank segment is calculated from the knee joint center to the lateral malleolus of the same side.
-    'Shank': {
+    'shank': {
         'male':{
             'mass': 0.0432,
             'CoM': 0.4459,
@@ -143,7 +142,7 @@ segments = {
         },
     
     # The foot segment is calculated from the heel to the tip of the longest toe of the foot.
-    'Foot': {
+    'foot': {
         'male':{
             'mass': 0.0137,
             'CoM': 0.4415,
@@ -158,44 +157,19 @@ segments = {
             'gyration_radius_ml': 0.279,
             'gyration_radius_vt': 0.139
             }
-        },
-
-    # The whole body "segment" is calculated from the spinous process of the 7th cervical vertebrae to the hips
-    # mid-point.
-    'Whole-body': {
-        'male':{
-            'mass': 1.,
-            'CoM': 0.5587,
-            'gyration_radius_ap': 1,
-            'gyration_radius_ml': 1,
-            'gyration_radius_vt': 1
-            },
-        'female':{
-            'mass': 1.,
-            'CoM': 0.5577,
-            'gyration_radius_ap': 1,
-            'gyration_radius_ml': 1,
-            'gyration_radius_vt': 1
-            }
         }
     }
 
 
 
-class BodySegment():
+class deLeva_RigidBody(RigidBody):
     """
-    A class representing the position in space of a body segment. It provides both the inertial and center of mass
-    parameters according to the equation of de Leva (1996).
+    A RigidBody superclass generated using the de Leva (1996) estimations.
     """
-
-
-    # dependancies
-    import numpy as np
-    from utils import classcheck
 
 
     # constructor
-    def __init__(self, origin, end, height, weight, male, what):
+    def __init__(self, origin, end, body_weight, male, what):
         """
         Input:
             origin: (3D Vector)
@@ -204,10 +178,7 @@ class BodySegment():
             end:    (3D Vector)
                     the vector with the data defining the position of the end of the body segment.
 
-            height: (float)
-                    the height of the participant in meters.
-
-            weight: (float)
+            body_weight: (float)
                     the weight of the participant in kg.
 
             male:   (bool)
@@ -224,31 +195,133 @@ class BodySegment():
         assert np.all([i in origin.df.columns] for i in end.df.columns), "'origin' and 'end' must have the same ndim."
         same_index = np.sum(np.diff(origin.index.to_numpy() - end.index.to_numpy())) == 0
         assert same_index, "'origin' and 'end' must have same index."
-        classcheck(height, ['float', 'int'])
-        classcheck(weight, ['float', 'int'])
+        classcheck(body_weight, ['float', 'int'])
         assert male or not male, "'male' must be a boolean."
         txt = "'what' must by any of the following string: " + [i for i in segments.keys()]
         assert what.lower() in [i for i in segments.keys()], txt
 
-        # set the entered values
-        self.origin = origin
-        self.end = end
-        self.height = height
-        self.weight = weight
-        self.gender = 'male' if male else 'female'
-        self.what = what
-        self.length = (origin - end).module()
-
         # get the specific parameters for the current segment according to de Leva (1996)
-        self.mass =  self.weight * segments[what][self.gender]['mass']
-        self.CoM = (end - origin) * segments[what][self.gender]['CoM'] + origin
-        I = {
-            'AP': (self.length.values.flatten() * segments[what][self.gender]['gyration_radius_ap']) ** 2 * self.mass,
-            'ML': (self.length.values.flatten() * segments[what][self.gender]['gyration_radius_ml']) ** 2 * self.mass,
-            'VT': (self.length.values.flatten() * segments[what][self.gender]['gyration_radius_ml']) ** 2 * self.mass
-            }
-        idx = self.length.index.to_numpy()
-        self.inertia = Vector(I, idx, self.length.xunit, self.length.dunit, 'Moment of inertia')
+        length = (origin - end).module().values.flatten()
+        mass =  self.weight * segments[what][self.gender]['mass']
+        CoM = (end - origin) * segments[what][self.gender]['CoM'] + origin
+        gender = 'male' if male else 'female'
+        tensor = np.array([[segments[what][gender]['gyration_radius_ml'], 0, 0],
+                          [0, segments[what][gender]['gyration_radius_ap'], 0],
+                          [0, 0, segments[what][gender]['gyration_radius_vt']]])
+        idx = CoM.columns.to_numpy()
+        tensor = {v: DataFrame(((tensor * length[i]) ** 2) * mass, idx, idx) for i, v in enumerate(idx)}
+
+        # generate the RigidyBody object
+        super().__init__({'Origin': origin, 'End': end}, mass, CoM, inertia_tensor, what)
+
+
+
+class RigidBody():
+    """
+    A class representing a rigid body with its properties and geometrial features.
+    """
+
+
+    # constructor
+    def __init__(self, endpoints, mass, com, inertia_tensor, description):
+        """
+        Input:
+            endpoints:  (dict)
+                        a dict of 3D vectors with the extremities defining the rigid body.
+
+            mass:       (float)
+                        the mass of the rigid body.
+
+            com:        (3D Vector)
+                        the vector defining the coordinates of the centre of mass.
+
+            inertia_tensor:(dict)
+                        a 3x3 DataFrame defining the inertia tensor of the current rigid body.
+
+            description:(str)
+                        a string describing the rigid body.
+        """
+        
+        # Check the endpoints
+        classcheck(endpoints, ['dict', 'NoneType'])
+        dims = np.array([])
+        idx = np.array([])
+        for i in endpoints:
+            classcheck(endpoints[i], ['Vector'])
+            assert endpoints[i].shape[1] == 3, "'" + i + "' must be a 3D vector."
+            dims = np.append(dims, endpoints[i].columns.to_numpy())
+            idx = np.append(idx, endpoints[i].index.to_numpy())
+        dims = np.unique(dims)
+        idx = np.unique(idx)
+        txt_dim = "all vectors must have the same dimensions."
+        txt_idx = "all vectors must have the same index."
+        for i in endpoints:
+            assert np.all([j in endpoints[i].columns.to_numpy() for j in dims]), txt_dim
+            assert np.all([j in endpoints[i].index.to_numpy() for j in idx]), txt_idx
+        
+        # check the mass    
+        classcheck(mass, ['float', 'int'])
+        
+        # check the CoM
+        classcheck(com, ['Vector'])
+        if endpoints is not None:
+            txt_dim = "'com' must have the same dimensions of the endpoints vectors."
+            txt_idx = "all vectors must have the same index of the endpoints vectors."
+            assert np.all([j in com.columns.to_numpy() for j in dims]), txt_dim
+            assert np.all([j in com.index.to_numpy() for j in idx]), txt_idx
+        
+        # check the inertia tensor    
+        classcheck(inertia_tensor, ['dict', 'NoneType'])
+        dims = np.array([])
+        idx = np.array([])
+        txt = "'inertia_tensor' must be a 3x3 DataFrame with index and columns equal to " + [i for i in com.columns]
+        for i in inertia_tensor:
+            classcheck(inertia_tensor[i], ['DataFrame'])
+            assert np.all([j in inertia_tensor[i].columns.to_numpy() for j in com.columns]), txt
+            assert np.all([j in inertia_tensor[i].index.to_numpy() for j in com.columns]), txt
+        
+        # store the data
+        self.endpoints = endpoints
+        self.mass =  mass
+        self.CoM = CoM
+        self.inertia_tensor = inertia_tensor
+        self.description = description
+
+
+    # method to generate a copy of the current object
+    def copy(self):
+        """
+        Create a copy of the current Rigid Body.
+        """
+        return RigidBody(self.endpoints, self.mass, self.com, self.inertia_sensor, self.description)
+
+    
+    # method to combined segments
+    def combine(self, *args):
+        """
+        Add multiple rigid bodies to the current one and return the combination of all.
+
+        Input:
+            args: (RigiBody)
+                1 or more RigidBody objects.
+
+        Output:
+            C:  (RigidBody)
+                A new RigidBody combining all the entered objects with the current one.
+        """
+
+        # check entries
+        for i in args:
+            classcheck(i, ["RigidBody"])
+
+        # combine the rigid bodies
+        C = self.copy()
+        for i in args:
+            C.endpoints = {**C.endpoints, **i.endpoints}
+            C.mass += i.mass
+            C.CoM = (self.CoM * self.mass + i.CoM * i.mass) / (self.mass + i.mass)
+            C.inertia_tensor = [j.inertia_tensor + ((j.CoM - C.CoM) ** 2) * j.mass for j in [self, i]]
+            C.inertia_tensor = C.inertia_tensor[0] + C.inertia_tensor[1]
 
 
 
@@ -284,7 +357,7 @@ joints = {
 
 
 
-def get_jointcentre(origin, end, what):
+def deLeva_jointcentre(origin, end, what):
     """
     this method returns a pyomech.Vector object representing the requried joint centre according to de Leva (1996b).
 
