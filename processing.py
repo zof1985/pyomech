@@ -30,7 +30,7 @@ def psd(y, fs=1, n=None):
     """
 
     # dependancies
-    from pybiomech.utils import classcheck
+    from pyomech.utils import classcheck
     import numpy as np
 
     # check the data
@@ -280,7 +280,7 @@ def crossovers(Y, X=None, K=2, samples=5, res=None, plot=False, par=None):
     # import the required packages
     import numpy as np
     import matplotlib.pyplot as pl
-    import pybiomech.plot as pp
+    import pyomech.plot as pp
     from os import remove
     from itertools import product
 
@@ -563,7 +563,7 @@ def eul2rmat(angles, order=[0, 1, 2]):
     # import the necessary packages
     import numpy as np
     from scipy.spatial.transform import Rotation
-    from pybiomech.utils import classcheck
+    from pyomech.utils import classcheck
 
     # check the entered parameters
     if not angles.__class__.__name__ in ['ndarray']:

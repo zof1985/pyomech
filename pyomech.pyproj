@@ -21,7 +21,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="physics.py">
+    <Compile Include="anatomy.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="plot.py" />

@@ -241,8 +241,10 @@ class Vector():
         :param key: (str) the item required.
         :return: the item.
         """
-        try: obj = self.df[key]
-        except Exception: obj = self[key]
+        try:
+            obj = self.df[key]
+        except Exception:
+            obj = getattr(self, key)
         return obj
 
 
@@ -361,7 +363,7 @@ class Vector():
 
         # import dependancies
         import numpy as np
-        from pybiomech.utils import classcheck
+        from pyomech.utils import classcheck
 
         # check dependancies and get the denominator
         if den is not None:
@@ -437,7 +439,7 @@ class Vector():
 
         # dependancies
         import numpy as np
-        from pybiomech.utils import classcheck
+        from pyomech.utils import classcheck
 
         # check the index
         classcheck(index, ["list", "ndarray", "NoneType"])
@@ -479,7 +481,7 @@ class Vector():
         """
 
         # import the necessary packages
-        from numpy import arccos
+        from numpy import arccos, argwhere, sqrt
 
         # check vdf
         assert self.match(A), '"A" must be a Vector object with index and columns equal to self.'
@@ -489,6 +491,12 @@ class Vector():
         a = (A - self).module().values.flatten()
         b = (B - self).module().values.flatten()
         c = (A - B).module().values.flatten()
+        zero = argwhere((a == 0) | (b == 0)).flatten()
+        nspe = argwhere((c ** 2 - a ** 2 - b ** 2) / (-2 * a * b) > 1).flatten()
+        if len(zero) > 0:
+            c[zero] = sqrt(a ** 2 + b ** 2)
+        if len(nspe) > 0:
+            check = True
         angle = arccos((c ** 2 - a ** 2 - b ** 2) / (-2 * a * b))
         return Vector({'Angle': angle}, self.index.to_numpy(), self.xunit, 'rad', 'Angle')
 
@@ -561,8 +569,8 @@ class Vector():
         """
 
         # dependancies
-        import pybiomech.processing as pr
-        from pybiomech.utils import classcheck
+        import pyomech.processing as pr
+        from pyomech.utils import classcheck
         import numpy as np
 
         # check the entered data
@@ -681,8 +689,8 @@ class Vector():
         import numpy as np
         import matplotlib.pyplot as pl
         import matplotlib.gridspec as gs
-        import pybiomech.plot as pp
-        from pybiomech.processing import interpolate
+        import pyomech.plot as pp
+        from pyomech.processing import interpolate
         from sklearn.svm import SVR
         from sklearn.model_selection import GridSearchCV
         from sklearn.exceptions import ConvergenceWarning
@@ -848,11 +856,11 @@ class Vector():
         """
 
         # import dependancies
-        from pybiomech.processing import power_freq, res_an, power_spectrum
+        from pyomech.processing import power_freq, res_an, power_spectrum
         from pandas import DataFrame, Series
         import matplotlib.pyplot as pl
         import matplotlib.gridspec as gs
-        import pybiomech.plot as pp
+        import pyomech.plot as pp
         import numpy as np
 
         # check the entered parameters
@@ -1052,12 +1060,12 @@ class Vector():
         """
 
         # import dependancies
-        import pybiomech.processing as pr
+        import pyomech.processing as pr
         from pandas import DataFrame, Series
         import matplotlib.pyplot as pl
         import matplotlib.gridspec as gs
-        import pybiomech.plot as pp
-        import pybiomech.utils as ut
+        import pyomech.plot as pp
+        import pyomech.utils as ut
         import numpy as np
 
         # check the entered parameters
@@ -1207,8 +1215,11 @@ class Vector():
         Filter all data in the vector using a Butterworth filter with the provided features.
 
         Input:
-            cutoff: (float, list, array)
-                    the filter cut-off in Hz.
+            cutoff: (float, list, array, dict)
+                    the filter cut-off in Hz. If a dict is provided, only the dimensions contained in as dict keys are
+                    filtered with cut-off equal to the value (float, int or an array or list of floats or ints) being
+                    the argument of the corresponding key. If the value is not a dict, it is applied to all the
+                    dimensions of the vector.
 
             order: (int)
                     the filter order.
@@ -1220,7 +1231,8 @@ class Vector():
                     Should the filter being applied twice in order to avoid alterations of the signals' phase?
 
             plot_path: (None, str)
-                    if a string is provided, a figure is generated in the plot_path showing the results of the filtering procedure.
+                    if a string is provided, a figure is generated in the plot_path showing the results of the
+                    filtering procedure.
 
             freq_lim: (float)
                     the upper frequency limit to be used when the data are plotted in the frequency domain.
@@ -1231,21 +1243,22 @@ class Vector():
         """
 
         # import dependancies
-        from pybiomech.processing import filt, psd
-        import matplotlib.pyplot as pl
-        import matplotlib.gridspec as gs
-        import pybiomech.plot as pp
-        import pybiomech.utils as ut
+        from pyomech.processing import filt, psd
+        import pyomech.plot as pp
+        import pyomech.utils as ut
         import numpy as np
 
         # check the entered parameters
         types = ["low", "lowpass", "high", "highpass", "bandpass", "stopband"]
         assert type in types, "'type' must be any of: " + str(types) + "."
-        if type in ["low", "lowpass", "high", "highpass"]:
-            ut.classcheck(cutoff, ["float", "int"])
-        else:
-            assert len(cutoff) == 2, "'cutoff' must be a 2 elements list or ndarray."
-            [ut.classcheck(i, ["float", "int"]) for i in cutoff]
+        if cutoff.__class__.__name__ != "dict":
+            cutoff = {i: cutoff for i in self.columns}
+        for i in cutoff:
+            if type in ["low", "lowpass", "high", "highpass"]:
+                ut.classcheck(cutoff[i], ["float", "int"])
+            else:
+                assert len(cutoff[i]) == 2, "'cutoff' must be a 2 elements list or ndarray."
+                [ut.classcheck(j, ["float", "int"]) for j in cutoff[i]]
         ut.classcheck(order, ["int"])
         assert phase_corrected or not phase_corrected, "'phase_corrected' must be a 'boolean' object."
         ut.classcheck(plot_path, ["NoneType", "str"])
@@ -1254,20 +1267,22 @@ class Vector():
 
         # generate the figure if necessary
         if plot_path is not None:
+            import matplotlib.pyplot as pl
+            import matplotlib.gridspec as gs
             fig = pl.figure(figsize=(pp.cm2in(6 * (self.shape[1])), pp.cm2in(12)), dpi=1000, frameon=False)
             grid = gs.GridSpec(2, self.shape[1])
             plts = [[fig.add_subplot(grid[0, i]), fig.add_subplot(grid[1, i])] for i in np.arange(self.shape[1])]
 
         # create a copy of the current vector
         O = self.copy()
-
+        
         # work on each dimension
-        fs = self.sampling_frequency
-        x = self.index.to_numpy()
-        for i, v in enumerate(O.columns):
+        fs = O.sampling_frequency
+        x = O.index.to_numpy()
+        for i, v in enumerate(cutoff):
 
             # filter the data
-            O.df.loc[x, v] = filt(self[v].values.flatten(), order, cutoff, self.sampling_frequency, type,
+            O.df.loc[:, v] = filt(self[v].values.flatten(), order, cutoff[v], self.sampling_frequency, type,
                                   phase_corrected)
 
             # plot the filtering outcomes
@@ -1283,7 +1298,7 @@ class Vector():
                 mag = ut.magnitude(np.max(y_old))
                 y_dig = "{:0." + str(0 if mag > 0 else abs(mag) + 1) + "f}"
                 pp.set_layout(plts[i][0], self.xunit, "" if i > 0 else self.dunit, label_size=6, x_ticks_text_size=6,
-                              y_ticks_text_size=6, title=v, y_digits=y_dig)
+                              y_ticks_text_size=6, title=v + "\n(Time domain)\n", y_digits=y_dig)
 
                 # plot the legend
                 if i == len(O.columns) - 1:
@@ -1294,22 +1309,28 @@ class Vector():
                 # frequency domain plot
                 z_old, k_old = psd(self[v].values.flatten() - np.mean(self[v].values.flatten()), fs)
                 z_new, k_new = psd(O[v].values.flatten() - np.mean(self[v].values.flatten()), fs)
-                n = np.argwhere(k_old <= 2* cutoff).flatten()
+                n = np.argwhere(k_old <= 2 * cutoff[v]).flatten()
                 plts[i][1].plot(k_old[n], z_old[n], color="navy", marker="o", markersize=1, alpha=0.5, linewidth=0.4)
                 plts[i][1].plot(k_new[n], z_new[n], color="darkred", marker="o", markersize=0.6, alpha=0.5,
                                 linewidth=0.4)
 
+                # plot the cutoff
+                xt = k_old[n][-1]
+                yt = np.max(z_old[n])
+                txt = r"$cutoff={:0.1f}\ Hz$".format(cutoff[v])
+                plts[i][1].text(xt, yt , txt, fontsize=6, ha="right", va="top")
+
                 # set the layout
                 mag = ut.magnitude(np.max(z_old))
                 y_dig = "{:0." + str(0 if mag > 0 else abs(mag) + 1) + "f}"
-                pp.set_layout(plts[i][1], "Hz", "" if i > 0 else "$(" + self.dunit + ")^2$", label_size=6,
-                              x_ticks_text_size=6, y_ticks_text_size=6, title=v, y_digits=y_dig)
+                pp.set_layout(plts[i][1], "Hz", "" if i > 0 else "$(" + self.dunit + ")^2$", title="(Frquency domain)",
+                              label_size=6, x_ticks_text_size=6, y_ticks_text_size=6, y_digits=y_dig)
 
         # finalize the plot if required
         if plot_path is not None:
 
             # plot the title
-            title = "Butterworth filtering\n"
+            title = r"$Butterworth\ filtering$" + "\n"
             title += r"$type:\ " + type + ("pass" if type in ["low", "high"] else "") + "$\n"
             title += r"$order:\ "
             if str(order)[-1] == 1:
@@ -1320,7 +1341,6 @@ class Vector():
                 title += "{:0.0f}".format(order) + "^{rd}$\n"
             else:
                 title += "{:0.0f}".format(order) + "^{th}$\n"
-            title += r"$cut\ off:\ {:0.1f}\ Hz".format(cutoff) + "$\n"
             title += r"$phase\ correction:\ " + ("Yes" if phase_corrected else "No") + "$"
             pl.suptitle(title, x=0.1, va="top", ha="left", fontsize=8, fontweight="bold")
 
@@ -1577,7 +1597,7 @@ class VectorDict(dict):
         """
 
         # import dependancies
-        from pybiomech.utils import to_excel as xlsx
+        from pyomech.utils import to_excel as xlsx
 
         # check the file
         assert file.__class__.__name__ == 'str', "'file' must be a str."
@@ -1663,7 +1683,7 @@ class VectorDict(dict):
         """
 
         # import the necessary packages
-        from pybiomech.utils import from_excel, classcheck, extract
+        from pyomech.utils import from_excel, classcheck, extract
         from numpy import unique, arange
 
         # check the entered file
