@@ -3,6 +3,7 @@
 import numpy as np
 import pyomech.utils as ut
 import pyomech.vectors as dt
+from itertools import combinations
 
 
 # CONSTANTS
@@ -539,3 +540,45 @@ class Joint():
     
         # return the calculated data
         return R, O
+
+
+
+    def angle(self, V, isAligned=False):
+        """
+        calculate the angle of the point vector V with respect to the current joint reference frame.
+
+        Input:
+            V:          (Vector)
+                        a Vector with the same shape of V.
+
+            isAligned:  (bool)
+                        if True, V is considered being part of the Joint reference frame. Otherwise, V is firstly
+                        rotated to match with the reference frame of the current Joint.
+
+        Output:
+            A:          (Vector)
+                        a Vector with dimensions defining the planes on which the angles are calculated. The angles
+                        are provided in radiants.
+        """
+
+        # check the entered data
+        ut.classcheck(isAligned, ['bool'])
+        ut.classcheck(V, ['Vector'])
+        assert V.shape == O.shape, "'V' must have shape " + str(O.shape) + "."
+        if isAligned:
+            txt = "'V' must have " + str(self.O.columns.to_numpy()) + " dimensions."
+            assert np.all([i in self.O.columns.to_numpy() for i in V.columns]), txt
+
+        # check if V has to be aligned with the Joint reference frame
+        if isAligned:
+            Vrot = V.copy()
+        else:
+            Vrot = (V - self.O).rotateby(self.R)
+            Vrot.df.columns = O.df.columns
+
+        # get the planes along which calculating the angles
+        planes = [i for i in combinations(Vrot.columns.to_numpy(), 2)]
+
+        # for each plane get the angle
+        A = {"-".join(plane): np.arctan2(V[pl[1]].values.flatten(), V[pl[0]].values.flatten()) for pl in planes}
+        return dt.Vector(A, O.index.to_numpy(), O.xunit, "rad", "Angle")
