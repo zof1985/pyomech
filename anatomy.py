@@ -4,6 +4,8 @@ import numpy as np
 import pyomech.utils as ut
 import pyomech.vectors as dt
 from itertools import combinations
+from scipy.spatial.transform import Rotation
+from pandas import DataFrame, MultiIndex, IndexSlice
 
 
 # CONSTANTS
@@ -414,138 +416,74 @@ class Joint():
     """
 
     # constructor
-    def __init__(self, O, I, P):
+    def __init__(self, O, i=None, j=None ,k=None):
         """
         Input:
             O:  (Vector)
                 the location of the joint centre.
 
-            I:  (Vector)
-                A vector reflecting the orientation of the first axis of the joint reference frame with respect to the
-                external reference frame.
+            i:  (Vector, None)
+                A vector reflecting the orientation of the versor along the first axis of the joint reference frame.
 
-            P:  (Vector)
-                A vector reflecting a point passing through the second axis of the joint reference frame with respect
-                to the external reference frame. This point serves to define the second axis orientation.
+            j:  (Vector, None)
+                A vector reflecting the orientation of the versor along the second axis of the joint reference frame.
+
+            k:  (Vector, None)
+                A vector reflecting the orientation of the versor along the third axis of the joint reference frame.
 
         Output:
             O:  (Vector)
                 The centre of the joint location as provided.
 
-            R:  (dict of ndarrays)
-                a dict having the indices of O as keys and, for each key, a n-dimensional matrix defining the rotations
-                necessary to translate the external reference frame into the joint reference frame.
+            referenceFrame:  (dict of ndarrays)
+                             a ReferenceFrame class object.
 
         Note:
-            during the generation of a Joint object, the I and J axes are used to build up the joint reference frame.
-            The third axis (K) is calculated via cross product between the versors i and j respectively extracted from
-            I and J.
+            a minimum of two versors between i, j and k must be provided.
         """
 
         # check the entered data
         ut.classcheck(O, ['Vector'])
-        ut.classcheck(I, ['Vector'])
-        ut.classcheck(P, ['Vector'])
-        O.match(I)
-        O.match(P)
+        ut.classcheck(i, ['Vector', 'NoneType'])
+        ut.classcheck(j, ['Vector', 'NoneType'])
+        ut.classcheck(k, ['Vector', 'NoneType'])
+        versors = [n for n in [i, j, k] if n is not None]
+        for n in versors:
+            O.match(n)
 
         # store the joint centre
         self.O = O
 
         # get the rotation matrix necessary to define the joint reference frame
-        self.R = __getR__(I, P, False)[0]
+        self.rf = ReferenceFrame(i, j, k)
 
 
 
-    # get a rotation matrix from a vector and a point in space.
-    def __getR__(v, p, rotate_frame=False):
+    def align(self, V):
         """
-        The method calculates a rotation matrix starting from a vector and a point in the space.
-    
+        align V to the self reference frame.
+
         Input:
-            v : (Vector)
-                a 3D Vector defining a vector originating from the origin of the reference frame.
-
-            p : (Vector)
-                a 3D Vector being part of the same reference frame of v and not being part of the line passing through
-                v.
-
-            rotate_frame : (Bool)
-                if False (default) the rotation matrix returned by this method reflect the rotation bringing the
-                reference frame defined by "v" and "p" aligned to the external reference frame:
-                [[1, 0, 0],
-                 [0, 1, 0],
-                 [0, 0, 1]]
-                If True, the rotation matrix will reflect the rotation necessary to align the same external reference
-                frame to the "v"-"p" reference frame.
+            V:  (Vector)
+                the object to be aligned.
 
         Output:
-            R: (dict)
-                a dict with each key defining one sample of "v" and "p". For each sample, a 3x3 ndarray in the form
-                Q x J where Q are the dimensions of "v" and "p" and "J" are the names of the new reference frame axes.
-
-            O: (Vector)
-                a pybiomech.vectors.Vector object defining the coordinates of the origin aroung which the rotation
-                matrix is calculated. The origin coordinates will reflect its distance from the origin of "v".
-
-        Notes:
-            The vector is assumed to be the first axis of the rotated frame and the point will define the equations of
-            the line defining the versor reflecting the second axis of the rotated frame.
-
-        Procedure:
-            For each time sample of "v" and "p" the following steps are made:
-            1)  O is identified along "v" as the point of interception between the line passing through "v" and
-                parallel to it with the plane "h" orthogonal to "v" and passing trough "p". O is calculated as
-                                        
-                                                    O = v * t
-
-                where t can be calculated via the equation:
-            
-                                            t = sum(p * v) / sum(v ** 2)
-
-            2)  "v" is used to define the versor representing the first axis of the rotated frame (i).
-            3)  "p-O" is used to build the versor representing the second axis of the rotated frame (j).
-            4)  "i" x "j" defines the third versor of the rotated frame (k).
-            5)  R is calculated as the inverse of the transposed [i, j, k] 3x3 matrix.
-            6)  if the frame has to be rotated rather than the vector, the rotation matrices calculated for each time 
-                sample is transposed.
+            R:  (Vector or Joint)
+                the object aligned to the current joint
         """
 
         # check the entered data
-        ut.classcheck(v, ['Vector'])
-        ut.classcheck(p, ['Vector'])
-        ut.classcheck(rotate_frame, ['bool'])
-        assert v.match(p), "v and p must have same dimensions and sample size."
-
-        # 1) get the O coordinates
-        t = np.atleast_2d((p * v).sum(1).values.flatten() / np.sum((v ** 2).values, axis=1).flatten())
-        O = v * np.vstack([t for n in v.columns]).T
-    
-        # 2) get "i"
-        i = v.normalize()
-
-        # 3) get "j"
-        j = (p - O).normalize()
-
-        # 4) get "k"
-        k = i.cross(j)
-
-        # 5) get "R"
-        R = {}
-        for n, q in enumerate(v.index.to_numpy()):
-            R[q] = np.linalg.inv(np.float64(np.vstack(np.atleast_2d(i.values[n], j.values[n], k.values[n])).T))
-
-        # 6) if the the reference frame has to be rotated, transpose the rotation matrices
-        R = {q: R[q].T for q in R} if rotate_frame else R
-    
-        # return the calculated data
-        return R, O
+        ut.classcheck(V, ['Vector'])
+        V.match(self.O)
+            
+        # return the rotated (i.e. aligned) vector
+        return self.rf.align(V - self.O)
+        
 
 
-
-    def angle(self, V, isAligned=False):
+    def cartesianAngle(self):
         """
-        calculate the angle of the point vector V with respect to the current joint reference frame.
+        calculate the orientation of the current Jointoint vector V with respect to the current joint reference frame.
 
         Input:
             V:          (Vector)
@@ -564,21 +502,377 @@ class Joint():
         # check the entered data
         ut.classcheck(isAligned, ['bool'])
         ut.classcheck(V, ['Vector'])
-        assert V.shape == O.shape, "'V' must have shape " + str(O.shape) + "."
-        if isAligned:
-            txt = "'V' must have " + str(self.O.columns.to_numpy()) + " dimensions."
-            assert np.all([i in self.O.columns.to_numpy() for i in V.columns]), txt
+        assert np.all([i == v for i, v in zip(V.shape, self.O.shape)]), "'V' must have shape " + str(self.O.shape)
+        assert np.all([i in self.O.index.to_numpy() for i in V.index.to_numpy()]), "'V' index does not match with 'O'."
 
         # check if V has to be aligned with the Joint reference frame
-        if isAligned:
-            Vrot = V.copy()
-        else:
-            Vrot = (V - self.O).rotateby(self.R)
-            Vrot.df.columns = O.df.columns
+        Vrot = V.copy() if isAligned else self.align(V)
 
         # get the planes along which calculating the angles
         planes = [i for i in combinations(Vrot.columns.to_numpy(), 2)]
 
         # for each plane get the angle
-        A = {"-".join(plane): np.arctan2(V[pl[1]].values.flatten(), V[pl[0]].values.flatten()) for pl in planes}
-        return dt.Vector(A, O.index.to_numpy(), O.xunit, "rad", "Angle")
+        A = {}
+        for pl in planes:
+            A["-".join(pl)] = np.arctan2(V[pl[1]].values.flatten(), V[pl[0]].values.flatten())
+            correct = np.argwhere(A["-".join(pl)] < 0).flatten()
+            if len(correct) > 0:
+                A["-".join(pl)][correct] = 2 * np.pi + A["-".join(pl)][correct]
+        return dt.Vector(A, self.O.index.to_numpy(), self.O.xunit, "rad", "Angle")
+
+
+
+    def jointAngle(self, ref, order=[0, 1, 2]):
+        """
+        calculate the angle of the current Joint vs the entered reference joint.
+
+        Input:
+            ref:        (Joint)
+                        a Joint with the same shape of self.
+
+            order:      (list, ndarray)
+                        the order of axes around which the aligning rotations have to be performed.
+
+        Output:
+            A:          (Vector)
+                        a Vector with dimensions defining the planes on which the angles are calculated. The angles
+                        are provided in radiants.
+        """
+
+        # check the entered data
+        ut.classcheck(ref, ['Joint'])
+        ut.classcheck(order, ['list', 'ndarray'])
+        self.O.match(ref.O)
+        assert len(order) == len(ref.O.columns), "Order must have length " + str(len(ref.O.columns))
+        
+        # get the string defining the order of the rotation
+        ord = "".join(["xyz"[i] for i in order])
+
+        # for each instant, get the rotation aligning the current joint to the original reference frame.
+        # Next, multiply it by the ref reference frame
+        A = np.atleast_2d([])
+        for i in self.rf:
+            R = Rotation.from_dcm(np.linalg.inv(self.rf[i]).dot(ref.reference[i])).as_euler(ord)
+            if A.shape[1] == 0:
+                A = np.atleast_2d(R)
+            else:
+                A = np.vstack([A, np.atleast_2d(R)])
+        
+        # return the angles
+        A = {i: v for i, v in zip(self.O.columns.to_numpy()[order], A.T)}
+        return dt.Vector(A, self.O.index.to_numpy(), self.O.xunit, "rad", "Joint angle")
+
+
+    # copy operation
+    def copy(self):
+        """
+        return an exact copy of self
+        """
+        p1 = {i: np.array([]) for i in self.O.columns.to_numpy()}
+        p2 = {i: np.array([]) for i in self.O.columns.to_numpy()}
+        for i in self.rf:
+            for j, v in enumerate(self.O.columns.to_numpy()):
+                p1[v] = np.append(p1[v], self.rf[i][0][j])
+                p2[v] = np.append(p2[v], self.rf[i][1][j])
+        p1 = dt.Vector(p1, self.O.index.to_numpy(), self.O.xunit, self.O.dunit, self.O.type)
+        p2 = dt.Vector(p2, self.O.index.to_numpy(), self.O.xunit, self.O.dunit, self.O.type)
+        return Joint(self.O.copy(), p1, p2)
+
+
+def angle3Points(A, B ,C):
+    """                 
+    calculate the angle ABC between joints using the Carnot theorem.
+
+    Input:
+        A, B, C:    (Joint)
+                    Joint objects with same shape
+
+    Output: 
+        C:          (Vector)
+                    a vector with the angle in radiants for the calculated angle.
+    """
+
+    # check dependancies
+    ut.classcheck(A, ['Joint'])
+    ut.classcheck(B, ['Joint'])
+    ut.classcheck(C, ['Joint'])
+    Ax = A.O.index.to_numpy()
+    Bx = B.O.index.to_numpy()
+    Cx = C.O.index.to_numpy()
+    Ay = A.O.columns.to_numpy()
+    By = B.O.columns.to_numpy()
+    Cy = C.O.columns.to_numpy()
+    txt = "'A', 'B', 'C' must have same index and dimensions."
+    assert np.all([i in Bx for i in Ax]), txt
+    assert np.all([i in Cx for i in Bx]), txt
+    assert np.all([i in Ax for i in Cx]), txt
+    assert np.all([i in By for i in Ay]), txt
+    assert np.all([i in Cy for i in By]), txt
+    assert np.all([i in Ay for i in Cy]), txt
+
+    # return the angle
+    return B.O.angle(A.O, C.O)
+
+
+
+class ReferenceFrame():
+    """
+    Generate a Reference Frame object.
+    """
+
+
+
+    def __init__(self, i=None, j=None, k=None):
+        """
+        Input:
+            i, j, k: (Vector)
+                     The vectors each defining the origin and the versors of the reference frame. If 2 versors are
+                     provided, the third is obtained via cross-product of the other 2.
+        """
+
+        # all data must be vectors
+        ut.classcheck(i, ['Vector', 'NoneType'])
+        ut.classcheck(j, ['Vector', 'NoneType'])
+        ut.classcheck(k, ['Vector', 'NoneType'])
+
+        # check the arguments
+        versors = [n for n in [i, j ,k] if n is not None]
+        assert len(versors) >= 2, "A minimum of 2 versors must be provided."
+        for n in versors[1:]:
+            versors[0].match(n)
+
+        # store the reference frame
+        self.i = (self.__buildVersor__(j, k) if i is None else i).normalize()
+        self.j = (self.__buildVersor__(k, i) if j is None else j).normalize()
+        self.k = (self.__buildVersor__(i, j) if k is None else k).normalize()
+                     
+
+
+    def __buildVersor__(self, p1, p2):
+        """
+        The method returns the coordinates in 3D space of the 3rd versor defining the reference frame.
+    
+        Input:
+            p1:     (Vector)
+                    a Vector defining a point along the first axis.
+
+            p2:     (Vector)
+                    a Vector defining a point along the second axis.
+
+        Output:
+            v:      (Vector)
+                    the vector containing the coordinates of the versor defining the third axis.
+
+        Procedure:
+            1)  O is identified as the perpendicular interception of the lines passing through (p1) and (p2). O is 
+                calculated as
+                                        
+                                                        O = p1 * t
+
+                where t can be calculated via the equation:
+            
+                                              t = sum(p1 * p2) / sum(p1 ** 2)
+
+            2)  "p1 - O" is used to define the versor representing the first axis of the rotated frame (i).
+            3)  "p2 - O" is used to build the versor representing the second axis of the rotated frame (j).
+            4)  "i" x "j" defines the third versor of the rotated frame (k).
+        """
+
+        # check the entered data
+        ut.classcheck(p1, ['Vector'])
+        ut.classcheck(p2, ['Vector'])
+        p1.match(p2)
+    
+        # 1) get the O coordinates
+        t = (p1 * p2.values).sum(1).values / np.sum((p1 ** 2).values, axis=1)
+        O = p1 * np.vstack([t.flatten() for n in p1.columns]).T
+    
+        # 2) get "i"
+        i = (p1 - O).normalize()
+
+        # 3) get "j"
+        j = (p2 - O).normalize()
+
+        # 4) get "k"
+        return i.cross(j)
+
+
+
+    def align(self, V):
+        """
+        align the vector V to the current reference frame.
+
+        Input:
+            V:  (Vector)
+                the object to be aligned.
+
+        Output:
+            R:  (Vector or Joint)
+                the object aligned to the current joint
+        """
+        
+        # get the inverse and transposed reference frame
+        R = self.to_dict()
+        R = {i: np.linalg.inv(R[i].values).T for i in R}
+        
+        # return the rotated (i.e. aligned) vector
+        return V.rotateby(R)
+
+
+
+    def copy(self):
+        """
+        create a copy of the current object.
+        """
+        return ReferenceFrame(self.i, self.j, self.k)
+
+
+
+    def atIndex(self, i):
+        """
+        return a 3x3 pandas.DataFrame containing the reference frame coordinates at the index i.
+
+        Input:
+            i:  (int, float)
+                the index of the reference frame to be returned.
+
+        Output:
+            M:  (pandas.DataFrame)
+                a 3x3 pandas.DataFrame containing the reference frame coordinates.
+        """
+
+        # check the entered data
+        ut.classcheck(i, ["int", "float"])
+
+        # check if the index is in the reference frame
+        assert i in self.i.index.to_numpy(), "'i' is out of the versors index."
+        
+        # return the dataframe
+        i_df = DataFrame(self.i.df.loc[i]).T
+        j_df = DataFrame(self.j.df.loc[i]).T
+        k_df = DataFrame(self.k.df.loc[i]).T
+        df = i_df.append(j_df, sort=False).append(k_df, sort=False)
+        df.index = ['i', 'j', 'k']
+        return df
+
+
+
+    def atSample(self, i):
+        """
+        return a 3x3 pandas.DataFrame containing the reference frame coordinates at the sample i.
+
+        Input:
+            i:  (int)
+                the sample of the reference frame to be returned.
+
+        Output:
+            M:  (pandas.DataFrame)
+                a 3x3 pandas.DataFrame containing the reference frame coordinates.
+        """
+
+        # check the entered data
+        ut.classcheck(i, ["int"])
+
+        # check if the index is in the reference frame
+        assert i >= 0 and i < self.i.shape[0], "'i' is out of the versors samples range."
+        
+        # return the dataframe
+        df = self.i.df.iloc[i].append(self.j.df.iloc[i], sort=False).append(self.k.df.iloc[i], sort=False)
+        df.index = ['i', 'j', 'k']
+        return df
+
+
+
+    def to_dict(self):
+        """
+        return a dict containing 3x3 pandas.DataFrame(s) for each index containing the reference frame coordinates at
+        the corresponding sample.
+        """
+        mdf = self.i.df.append(self.j.df, sort=False).append(self.k.df, sort=False)
+        mdf.index = MultiIndex.from_product([["i", "j", "k"], self.i.index.to_numpy()])
+        return {i: mdf.loc[IndexSlice[:, i], :] for i in self.i.index.to_numpy()}
+    
+
+
+    def from_dict(self, D, xunit=""):
+        """
+        generate a ReferenceFrame object starting from a dict object.
+
+        Input:
+            D:      (dict)
+                    The dict must have one key per sample/index and each key must contain a 3 x 3 pandas.DataFrame or
+                    ndarray with each row defining each versor and each column representing the dimensions.
+
+            xunit:  (dict)
+                    the label defining the index unit of measure.
+
+        Output:
+            R:  (ReferenceFrame)
+                the corresponding ReferenceFrame object.
+        """
+
+        # check the entered data
+        ut.classcheck(D, ['dict'])
+        dms = []
+        cls = [] 
+        for i in D:
+            ut.classcheck(D[i], ['ndarray', 'DataFrame'])
+            assert np.all([j == 3 for j in D[i].shape]), "All arguments of 'D' must be a 3 x 3 ndarray or DataFrame."
+            if D[i].__class__.__name__ == "DataFrame":
+                dms += [D[i].columns.to_numpy()]
+                cls += [D[i].__class__.__name__]
+            else:
+                dms += [['X', 'Y', 'Z']]
+                cls += ['ndarray']
+        dms = np.unique(np.array(dms).flatten())
+        cls = np.unique(np.array(cls).flatten())
+        assert len(dms) == 3, "Dimensions in the matrices do not match."
+        assert len(cls) == 1, "all matrices must be DataFrames or ndarrays."
+
+        # build the versors
+        i = np.vstack([np.atleast_2d(D[l][0] if cls[0] == "ndarray" else D[l].values[0]) for l in D]).T
+        i = dt.Vector({l: v for l, v in zip(dms, i)}, np.array([l for l in D]), xunit, "", "Versor")
+        j = np.vstack([np.atleast_2d(D[l][1] if cls[0] == "ndarray" else D[l].values[1]) for l in D]).T
+        j = dt.Vector({l: v for l, v in zip(dms, j)}, np.array([l for l in D]), xunit, "", "Versor")
+        k = np.vstack([np.atleast_2d(D[l][2] if cls[0] == "ndarray" else D[l].values[2]) for l in D]).T
+        k = dt.Vector({l: v for l, v in zip(dms, k)}, np.array([l for l in D]), xunit, "", "Versor")
+
+        # create the ReferenceFrame object
+        return ReferenceFrame(i, j, k)
+        
+
+
+    def rotateby(self, R, postprod=True):
+        """
+        rotate the reference frame by the rotation matrix R.
+
+        Input:
+            R:          (3x3 ndarray or dict of 3x3 ndarrays)
+                        the rotation matrix or a dict containing the rotation matrix to be applied for each index.
+
+            postprod:   (bool)
+                        should the rotation matrix be post-multiplied?
+
+        Output:
+            M:  (ReferenceFrame)
+                a new ReferenceFrame instance with rotated versors.
+        """
+
+        # check the entered data
+        ut.classcheck(R, ['ndarray', 'dict'])
+        ut.classcheck(postprod, ['bool'])
+        if R.__class__.__name__ == "ndarray":
+            assert np.all([i == 3 for i in R.shape]), "'R' must be a 3x3 ndarray."
+            R = {i: R for i in self.i.index.to_numpy()}
+        else:
+            txt = "R index not matching the ReferenceFrame object."
+            assert np.all([i in self.i.index.to_numpy() for i in R.keys()]), txt
+            assert len(R.keys()) == self.i.shape[0], txt
+        
+        # rotate the reference frame
+        M = self.to_dict()
+        for i in R:
+            M[i] = M[i].dot(R[i]) if postprod else DataFrame(R[i].dot(M[i].values), index=['i', 'j', 'k'], columns=dms)
+
+        # return the reference frame
+        return ReferenceFrame.from_dict(M, self.i.xunit)

@@ -1,4 +1,19 @@
-# coding: utf-8
+
+
+
+# IMPORTS
+
+
+import numpy as np
+import pandas as pd
+import openpyxl as xl
+import time
+import os
+
+
+
+# METHODS
+
 
 
 def polynome_txt(fit, magnitude_threshold=2, digits=3):
@@ -20,14 +35,6 @@ def polynome_txt(fit, magnitude_threshold=2, digits=3):
         txt: (str)
             a string in the form: Y = aX^n + bX^n-1 ....
     """
-
-    # import the dependancies
-    import numpy as np
-
-    # check the entries
-    classcheck(fit, ['list', 'ndarray'])
-    classcheck(magnitude_threshold, ['int', 'float'])
-    classcheck(digits, ['int'])
 
     # ensure fit is a 1D array
     fit = np.atleast_1d(fit)
@@ -65,6 +72,7 @@ def polynome_txt(fit, magnitude_threshold=2, digits=3):
 
     # return the text
     return txt
+
 
 
 def classcheck(obj, classes, txt=None):
@@ -108,18 +116,11 @@ def magnitude(value, base=10):
             the number required to elevate the base to get the value
     """
 
-    # import the necessary packages
-    from numpy import floor, log
-
-    # check the entered values
-    classcheck(value, ["int", "float"])
-    classcheck(base, ["int", "float"])
-
 	# return the magnitude
     if value == 0 or base == 0:
         return 0
     else:
-        return int(floor(log(abs(value)) / log(base)))
+        return int(np.floor(np.log(abs(value)) / np.log(base)))
 
 
 
@@ -140,108 +141,36 @@ def get_files(path, extension=None, check_subfolders=False):
             a list containing the full_path to all the files corresponding to the input criteria.
     """
 
-    # check entered data
-    classcheck(path, ["str"])
-    classcheck(extension, ["NoneType", "str"])
-    classcheck(check_subfolders, ["bool"])
+    # output storer
+    out = []
 
-    # import dependancies
-    import os
+    # surf the path by the os. walk function
+    for root, dirs, files in os.walk(path):
+        out += [os.path.join(root, obj) for obj in files if obj[-len(extension):] == extension]
+        
+        # handle the subfolders
+        if not check_subfolders:
+            break 
 
-	# if path is not a folder return an empty list
-    if os.path.isfile(path): return []
-
-    # set the number of characters that have to be checked as extension
-    n = None if extension is None else len(extension)
-
-	# search within path and its subfolders
-    try:
-        files = [path + "\\" + i for i in os.listdir(path)]
-    except FileNotFoundError:
-        files = []
-    i = 0
-    while i < len(files):
-
-        # if the current element is a folder update the list according to check_subfolders
-        if os.path.isdir(files[i]):
-            if check_subfolders: files += [files[i] + "\\" + j for j in os.listdir(files[i])]
-            files.pop(i)
-
-		# if the current element is a file with different extension as the one provided remove it from the list
-        elif extension is not None and files[i][-n:] != extension: files.pop(i)
-
-		# keep the file and move forward
-        else: i += 1
-
-	# return the list
-    return files
+    # return the output
+    return out
+    
 
 
-
-def get_path(file):
-	"""
-	function to get the full path of a file
-	"""
-
-	# import the required packages
-	import os
-
-	# if the file is empty, return an empty string
-	if not file: return file
-
-	# if only the filename is provided,
-	# add the current working directory path
-	file = file.replace("/", "\\")
-	out = (os.getcwd() + "\\") if len(file.split("\\")) < 2 else "" + file
-
-	# check if the file contains " elements and remove them
-	out = out[1:] if out[0] == "" else out
-	out = out[:-1] if out[-1] == "" else out
-	out = out[1:] if out[0] == "" else out
-	out = out[:-1] if out[-1] == "" else out
-
-	# ensure that the drive letter is capital
-	out = out[0].upper() + out[1:]
-
-	# check if the output file is a file or a directory
-	out += "\\" if os.path.isdir(out) and out[-1:] != "\\" else ""
-
-	# return the updated string
-	return out
-
-
-
-def lvlup(file, sep="\\"):
+def lvlup(file):
 	"""
 	Goes to the superior level in the directory path.
 
 	Input:
-		fil: (str)
+		file: (str)
 			a file or a directory. Otherwise a message is casted and the function returns the input as is
-		sep: (str)
-			the characters defining the directory separator
 
 	Output:
 		a string reflecting the superior directory of file.
 	"""
 
-	# import the required packages
-	from os.path import exists
-
 	# check whether file exists as "file" or directory
-	if not exists(str(file)): return file
-
-	up = str(file).split(sep)[:-1]
-	up = up[:-1] if file.endswith(sep) else up
-	if len(up) == 0:
-
-		# No valid level have been found over file, thus return file
-		return file
-	else:
-		out = ""
-		for s in up:
-			out += s + sep
-		return out
+	return os.path.abspath(os.path.join(file, os.pardir))
 
 
 
@@ -263,24 +192,11 @@ def to_excel(P, D, N="Sheet1", new_file=False):
 		The functions stores the data to the indicated file.
 	"""
 
-	# import the necessary packages
-	from openpyxl import Workbook, load_workbook
-	from os.path import exists
-
-	# check files
-	classcheck(P, ["str"])
-	assert P.split(".")[-1] == "xlsx", "'P' must end with '.xlsx'"
-	classcheck(D, ["DataFrame"])
-	assert D.shape[0] <= 1048576, "'D' has more than 1048576 rows."
-	assert D.shape[1] <= 16384, "'D' has more than 16384 columns."
-	classcheck(N, ["str"])
-	classcheck(new_file, ["bool"])
-
 	# get the workbook
-	if exists(P) and not new_file:
-		wb = load_workbook(P)
+	if os.path.exists(P) and not new_file:
+		wb = xl.load_workbook(P)
 	else:
-		wb = Workbook()
+		wb = xl.Workbook()
 		try:
 			sh = wb["Sheet"]
 			wb.remove(sh)
@@ -310,39 +226,44 @@ def to_excel(P, D, N="Sheet1", new_file=False):
 
 
 
-def from_excel(path, sheets=None, verbose=False):
+def from_excel(path, sheets=None, verbose=False, **kwargs):
 	"""
 	a shorthand function to collect data from an excel file and to store them into a dict.
 
 	Input
-		path: (str)
-			the path to the file where to store the file.
-		sheets: (list of str)
-			the name of the sheets to be imported. If None all sheets will be imported.
+		path:		(str)
+					the path to the file where to store the file.
+
+		sheets:		(list of str)
+					the name of the sheets to be imported. If None all sheets will be imported.
+
+		verbose:	(bool)
+					if True, messages are generated if errors are encountered.
+
+		kwargs:		additional arguments passed to pandas.read_excel
 
 	Output
 		a dict object with keys equal to the sheets name and pandas dataframe as elements of each sheet
 		in the excel file.
 	"""
 
-	# import the required packages
-	from pandas import ExcelFile, read_excel
-	from numpy import array
-
 	# retrive the data in the path file
 	try:
-		xlfile = ExcelFile(path)
+		xlfile = pd.ExcelFile(path)
 	except Exception:
-		if verbose: print(path + " is not valid.")
-		try: xlfile.close()
-		except Exception: pass
+		if verbose:
+			print(path + " is not valid.")
+		try:
+			xlfile.close()
+		except Exception:
+			pass
 		return None
 
 	# get the sheets name
-	sheets = array(xlfile.sheet_names if sheets is None else [sheets]).flatten()
+	sheets = np.array(xlfile.sheet_names if sheets is None else [sheets]).flatten()
 
 	# get the data
-	dfs = {i: read_excel(path, i) for i in sheets}
+	dfs = {i: pd.read_excel(path, i, **kwargs) for i in sheets}
 
 	# close the excel file
 	xlfile.close()
@@ -373,12 +294,8 @@ def get_time(tic=None, toc=None, as_string=True, compact=True):
 		difference between them.
 	"""
 
-	# import the necessary packages
-	import numpy as np
-	from time import time
-
 	# check what to do
-	if tic is None: return time()
+	if tic is None: return time.time()
 	elif toc is None: tm = np.float(tic)
 	else: tm = np.float(toc - tic)
 
@@ -410,7 +327,7 @@ def get_time(tic=None, toc=None, as_string=True, compact=True):
 
 
 
-def extract(data, factors):
+def extract(data, factors, axis=1):
 	"""
 	Extract from data the names according to factors.
 
@@ -418,26 +335,19 @@ def extract(data, factors):
 		data: (DataFrame)
 			a dataframe containing the parameters
 		factors: (dict)
-			a dict having the factors to be considered as keys and one row for each combination of factors to extract
 
 	Output:
 		a list where:
 			0. the extracted dataframe having the columns of the factors and of the indicated names
 			1. the index of data to corresponding to the extracted values
 	"""
+	
+	# return the wanted rows
+	wnt = data[[i for i in factors]].isin(factors).all(axis)
 
-	# import the necessary packages
-	from numpy import argwhere
-
-	# if factors is provided as dataframe, convert it to  a dict object
-	try: factors = factors.to_dict("list")
-	except Exception: factors = factors
-
-	# get the index of the required subset
-	index = argwhere(data[[f for f in factors]].isin(factors).all(1)).flatten().astype(int)
-	index = data.index.to_numpy()[index]
-	cols = data.columns.tolist()
+	# get the data and its index
+	df = data.loc[wnt]
+	ix = df.index.to_numpy()
 
 	# return the subset
-	tdata = data.loc[index, cols]
-	return tdata, tdata.index.to_numpy().flatten()
+	return df, ix
