@@ -80,7 +80,7 @@ def split_data(source, data, groups):
 
 
 
-########    CLASSES    ########
+########    GENERAL CLASSES    ########
 
 
 
@@ -171,10 +171,69 @@ class Test(EffectSize):
         # add all the other parameters
         for i in kwargs:
             setattr(self, i, kwargs[i])
-    
 
 
-class Hotelling(Test):
+
+class TestGroup():
+
+
+
+    def __init__(self, **kwargs):
+        """
+        a collector of Test objects by name. It provides easy to access methods to manage families of tests being
+        part of multiple tests.
+
+        Input:
+            kwargs: named Test objects.
+        """
+        for i in kwargs:
+            if isinstance(kwargs[i], Test):
+                setattr(self, i, kwargs[i])
+
+
+
+    def to_df(self):
+        """
+        Create a column DataFrame containing all the outcomes of the tests.
+        """
+        out = []
+        for attr in self.attributes:
+            out += [pd.DataFrame([attr], index='Test', columns=[0]).append(getattr(self, attr).to_df())]
+        return pd.concat(out, axis=1)
+
+
+
+    def copy(self):
+        """
+        create a copy of the current Test object.
+        """
+        return TestGroup(**{i: getattr(self, i) for i in self.attributes()})
+
+
+
+    def attributes(self):
+        """
+        get the list of attributes stored into this object.
+        """
+        return [i for i in self.__dict__]
+
+
+
+    def __repr__(self):
+        return self.__str__()
+
+
+
+    def __str__(self):
+        return "\n".join([attr + "\n" + getattr(self, attr).__str__() for attr in self.attributes()])
+
+
+
+########    IMPLEMENTATION CLASSES    ########
+
+
+
+class T2(Test):
 
 
 
@@ -257,7 +316,7 @@ class Hotelling(Test):
         df = (p, na - 1 + (0 if nb is None else (nb - 1)))
 
         # create the test
-        super(Hotelling, self).__init__(value=t2, df=df, crit=t2_crit, alpha=alpha, p=v, name=name)
+        super(T2, self).__init__(value=t2, df=df, crit=t2_crit, alpha=alpha, p=v, name=name)
 
 
 
@@ -547,12 +606,9 @@ class PermutationTest(Test):
             warnings.warn(txt)
 
         # build the pdf
-        pdf = np.squeeze([self.__ptest__(source, data, groups, test, test_kwargs) for i in np.arange(k)])
-
-        '''
+        # pdf = np.squeeze([self.__ptest__(source, data, groups, test, test_kwargs) for i in np.arange(k)])  # debug
         pdf = np.squeeze(jl.Parallel(n_jobs=-1, prefer="threads")
                          (jl.delayed(self.__ptest__)(source, data, groups, test, test_kwargs) for i in np.arange(k)))
-        '''
 
         # get the test output and standardize test output
         t0 = test(source, data, groups, **test_kwargs)
@@ -600,8 +656,8 @@ class PermutationTest(Test):
         S = source[np.squeeze(np.append(data, groups))].copy()
         S.loc[ix, groups] = S.loc[np.random.permutation(ix), groups].values
 
-        # return the value of the test resulting from the shuffled data
-        return test(source=S, data=data, groups=groups, **test_kwargs).value
+        # return the (max) value of the test resulting from the shuffled data
+        return np.max(test(source=S, data=data, groups=groups, **test_kwargs).value)
 
 
 

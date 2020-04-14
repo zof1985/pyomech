@@ -11,6 +11,8 @@ import pyomech.processing as pr
 import pyomech.vectors as pv
 import pyomech.utils as pu
 import colorcet as cc
+import scipy.signal as ss
+import scipy.integrate as si
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
@@ -216,26 +218,28 @@ class Step():
 class RunningAnalysis():
 
 
-
-    def __init__(self, **kwargs):
+    def __init__(self, source, **kwargs):
 
         # initialize the errors dict
         self.errors = {i: np.array([]) for i in Step.events_names()[:-1]}
 
-        # treadmill data was provided and the "new algorithm" is required
+        # get the new_approach input if provided
+        new_approach = kwargs.pop("new_approach")
+
+        # treadmill data was provided
         if "speed" in np.array([i for i in kwargs.keys()]):
-            self.__from_treadmill__(**kwargs)
-            self.source = "New"
+            if new_approach:
+                self.__from_treadmill_new__(**kwargs)
+            else:
+                self.__from_treadmill_old__(**kwargs)
         
         # force data was provided
         elif "force" in np.array([i for i in kwargs.keys()]):
             self.__from_lab__(**kwargs)
-            self.source = "Lab"
 
         # blackbox data was provided
         elif "blackbox" in np.array([i for i in kwargs.keys()]):
             self.__from_blackbox__(**kwargs)
-            self.source = "Old"
         
         # the provided parameters are unknown thus create an empty object
         else:
@@ -243,8 +247,10 @@ class RunningAnalysis():
             self.source = ""
             self.tw = None
             self.n = None
-            self.fc = None  
+            self.fc = None
 
+        # add the new source
+        self.source = source
 
 
     def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None, meta_left=None,
@@ -455,7 +461,6 @@ class RunningAnalysis():
         self.__add_steps__(fs, ms, to)
         
 
-
     def __from_blackbox__(self, blackbox, tw=None, fc=None, n=None):
         """
         method extracting the gait events from blackbox data.
@@ -495,12 +500,11 @@ class RunningAnalysis():
         
         # store the steps and the errors
         self.__add_steps__(fs, ms, to)
-
+  
         
-        
-    def __from_treadmill__(self, speed, tw=2, fc=10, n=2):
+    def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2):
         """
-        method extracting the gait events from blackbox data.
+        method extracting the gait events from treadmill data using a new approach.
 
         Input:
             speed:  (Vector)
@@ -568,14 +572,7 @@ class RunningAnalysis():
             """
             
             # get the first minima lower than 0.4
-            mn =  pr.find_peaks(-spf, -0.4, plot=False)[0]
-            return mn
-            
-            # get the first peak in the first derivative after mn
-            # pk = pr.find_peaks((spf[2:] - spf[:-2])[mn:], plot=False)[0] + mn + 1
-
-            # return the average of both
-            # return int(np.round(np.mean([mn, pk])))
+            return pr.find_peaks(-spf, -0.4, plot=False)[0]
         
         
         def get_to(spf):
@@ -592,16 +589,7 @@ class RunningAnalysis():
             """
 
             # get the first peak higher than 0.8 in the filtered speed
-            pk = pr.find_peaks(spf, 0.8, plot=False)[0]
-            return pk
-
-            # get the first derivative
-            # d1 = spf[2:] - spf[:-2]
-
-            # get the first minima in the first derivative after pk
-            # mn = pr.find_peaks(-d1[pk:], plot=False)[0] + 1 + pk
-
-            # return int(np.round(np.mean([pk, mn])))
+            return pr.find_peaks(spf, 0.8, plot=False)[0]
 
 
         # store the data
@@ -681,9 +669,309 @@ class RunningAnalysis():
                     last = self.steps[-1].landing
                 else:
                     last = None
+    
+
+    def __from_treadmill_old__(self, speed, tw=2, fc=10, n=2):
+        """
+        method extracting the gait events from treadmill data using the old approach.
+
+        Input:
+            speed:  (Vector)
+                    the vector containing the treadmill speed data to be used for the analysis.
+
+            tw:     (float)
+                    the time-window (in seconds) used to search for the next step
+
+            fc:     (float)
+                    the cut-off frequency used to low-pass filter the data via a phase-corrected Butterworth filter.
+
+            n:      (int)
+                    the order of the phase-corrected Butterworth low-pass filter.
+        """
         
 
+        def __crossings__(self, x, th=None):
+            """
+            get the location of the th crossings in x.
 
+            Input:
+                x:  (1D ndarray)
+                    a signal.
+
+                th: (float, NoneType)
+                    the threshold that is used as reference. If None, the mean of x is used as
+                    threshold.
+
+            Output:
+                c:  (ndarray)
+                    the location (in sample points) of the crossings.
+            """
+
+            # get the threshold
+            if th is None: th = np.mean(x)
+
+            # get the crossings
+            return np.argwhere(abs(np.diff(np.sign(x - th))) == 2).flatten()
+
+
+        def __clusters__(self, x, th=None):
+            """
+            get a cluster of peaks. A cluster is a group of peaks where the interrupting minima are
+            still above a given threshold.
+
+            Input:
+                x:  (1D ndarray)
+                    a signal.
+
+                th: (float, NoneType)
+                    the threshold that is used to ensure the cluster. if None, the mean of x is used as
+                    threshold.
+
+            Output:
+                c:  (list)
+                    a list of 1D nd arrays with the location (in samples) of the peaks of each cluster
+                    in x.
+            """
+
+            # get the threshold
+            if th is None: th = np.mean(x)
+
+            # get the peaks in x above th
+            pks = pr.find_peaks(x, height=th, plot=False)
+            if len(pks) == 0: return []
+        
+            # get the minima in x below th
+            mns = np.unique(np.concatenate([[0], __crossings__(x, th), [len(x) - 1]]).flatten())
+
+            # get the clusters
+            c = [pks[np.argwhere((pks > mns[i]) & (pks < mns[i + 1])).flatten()]
+                 for i in np.arange(len(mns) - 1)]
+        
+            # clean the list from empty clusters
+            return [i for i in c if len(i) > 0]
+
+
+        def __fs__(self, time, position, speed, acceleration):
+            """
+            This method serves the purpose of extracting the first foot-strike.
+
+            Input:
+                time:           (1D ndarray)
+                                The time signal
+
+                position:       (1D ndarray)
+                                The position signal
+                
+                speed:          (1D ndarray)
+                                The speed signal
+
+                acceleration:   (1D ndarray)
+                                The acceleration signal
+
+            Output:
+                fs:     (float)
+                        the time occurrence of the first identified foot-strike in the signal.
+        
+            Procedure:
+                1)  Get the first peaks cluster in pos above half of the pos values range.
+                2)  Get the first minima with value below half of the pos range and occurring after 1).
+                3)  Get the lowest minima in speed occurring between 1) and 2) and having amplitude below half of
+                    the speed range.
+                4)  Get the last minima in the acceleration occurring after 3).
+
+            """
+        
+            # get the first peak in pos
+            pos_pks = __clusters__(position, 0.5)
+            pos_pk = 0 if len(pos_pks) == 0 else pos_pks[0][0]
+
+            # get the first minima in pos after the peak
+            pos_mns = __clusters__(-position[pos_pk:])
+            pos_mn = (len(position) - 1) if len(pos_mns) == 0 else (pos_mns[0][0] + pos_pk)
+
+            # get the last speed minima between pos_pk and pos_mn
+            spe_mns = __clusters__(-speed[np.arange(pos_pk, pos_mn)])
+            if len(spe_mns) == 0:
+                spe_mn  = pos_mn
+            else:
+                spe_mn = pos_pk - 1 + spe_mns[-1][np.argmin(speed[spe_mns[-1]])]
+        
+            # get the last peak in speed before spe_mn
+            spe_pks = __clusters__(speed[:spe_mn], speed[spe_mn] + 0.2)
+            spe_pk = spe_mn if len(spe_pks) == 0 else spe_pks[-1][-1]
+
+            # get the last minima in acceleration before spe_pk
+            acc_mns = __clusters__(-acceleration[:spe_pk], -2)
+            return time[spe_pk if len(acc_mns) == 0 else acc_mns[-1][-1]]
+
+
+        def __ms__(self, time, position, speed, acceleration):
+            """
+            This method serves the purpose of extracting the first mid-stance.
+
+            Input:
+                time:           (1D ndarray)
+                                The time signal
+
+                position:       (1D ndarray)
+                                The position signal
+                
+                speed:          (1D ndarray)
+                                The speed signal
+
+                acceleration:   (1D ndarray)
+                                The acceleration signal
+
+            Output:
+                ms:     (float)
+                        the time occurrence of the first identified mid-stance in the signal.
+        
+            Procedure:
+                1)  Get the first local minima in pos with amplitude lower than half of the pos range.
+                2)  If no local minima are found return None, otherwise get the last local minima in speed
+                    occurring before the point found in 1 and having amplitude below half of the speed range.
+
+            Note:
+                The algorithm is designed to work on a signal portion starting from a foot-strike.
+            """
+
+            # look at the first minima in pos with value lower than its mean value
+            pos_mns = __clusters__(-position)
+            pos_mn = (len(position) - 1) if len(pos_mns) == 0 else pos_mns[0][0]
+        
+            # get the first minima of the last speed cluster before pos_min
+            spe_mns = __clusters__(-speed[:pos_mn])
+            return None if len(spe_mns) == 0 else time[spe_mns[-1][np.argmin(speed[spe_mns[-1]])]]
+    
+
+        def __to__(self, time, position, speed, acceleration):
+            """
+            This method serves the purpose of extracting the first toe-off.
+
+            Input:
+                time:           (1D ndarray)
+                                The time signal
+
+                position:       (1D ndarray)
+                                The position signal
+                
+                speed:          (1D ndarray)
+                                The speed signal
+
+                acceleration:   (1D ndarray)
+                                The acceleration signal
+
+            Output:
+                to:     (float)
+                        the time occurrence of the first identified toe-off in the signal.
+        
+            Procedure:
+                1)  Get the first local maxima in pos above half of the pos range.
+                2)  Get the highest last peak of the last cluster spot before 1).
+
+            Note:
+                To simplify and speed up the computation, the algorithm is designed to run on a
+                time-speed signal subsection starting from a mid-stance.
+            """
+
+            # look at the first peak in pos
+            pos_pks = __clusters__(position)
+            pos_pk = (len(position) - 1) if len(pos_pks) == 0 else pos_pks[0][0]
+        
+            # get the highest peak of the last cluster in speed occurring before pos_pk
+            spe_pks = __clusters__(speed[:pos_pk])
+            return None if len(spe_pks) == 0 else time[spe_pks[-1][np.argmax(speed[spe_pks[-1]])]]
+
+
+        # store the data
+        self.tw = tw                                                       # time-window (s)
+        self.n = 2                                                         # the filter order
+        self.fc = 20                                                       # the filter cut-off frequency (hz)
+
+        # initialize the steps output
+        self.steps = []
+        last = -1
+
+        # start the simulation
+        time = speed.index.to_numpy()
+        ix_buf = np.argwhere((time >= 0) & (time <= self.tw)).flatten().tolist()
+        while last is not None and last < time[-1]:
+
+            # update the buffer index
+            ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
+
+            # check the gaitcycles list to see if a new search for new gait events should run
+            # since the speed data are filtered. A minimum length is required.
+            if len(ix_buf) <= 11:
+                last = None
+            elif time[ix_buf[0]] >= last:
+
+                # get the data in the buffer and filter the speed data
+                tm_buf = time[ix_buf]
+
+                # get the speed signal
+                sp_buf = speed.values.flatten()[ix_buf
+
+                # get the filtered speed signal
+                spf_buf = pr.butt_filt(speed.values.flatten()[ix_buf], self.fc, 
+                                       speed.sampling_frequency, self.n, plot=False)
+                
+                # get the acceleration data
+                ac_buf = (sp_buf[2:] - sp_buf[:-2]) / (tm_buf[2:] - tm_buf[:-2])
+
+                # get the position data
+                ps_buf = ss.detrend(si.cumtrapz(sp_buf, tm_buf))
+
+                # pair and scale all signals
+                tm_buf = tm_buf[1:-1]
+                sp_buf = self.__scale__(sp_buf[1:-1])
+                ps_buf = self.__scale__(ps_buf[1:])
+                ac_buf = self.__scale__(ac_buf)
+                
+                # apply __fs__
+                if last < 0:
+
+                    # ensure the signal starts from a peak
+                    t0 = __clusters__(sp_buf, 0.8)[0][0]
+                    tm_buf = tm_buf[t0:]
+                    ps_buf = ps_buf[t0:]
+                    sp_buf = sp_buf[t0:]
+                    ac_buf = ac_buf[t0:]
+
+                    # get the foot-strike
+                    fs0 = __fs__(tm_buf, ps_buf, sp_buf, ac_buf)
+                else:
+                    fs0 = self.steps[-1].landing
+
+                # apply __ms__
+                if fs0 is not None:
+                    ix = np.argwhere(tm_buf > fs0).flatten()
+                    ms = __ms__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                else:
+                    ms = None
+
+                # apply __to__
+                if ms is not None:
+                    ix = np.argwhere(tm_buf > ms).flatten()
+                    to = __to__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                else:
+                     to = None
+                
+                # apply __fs__ again
+                if to is not None:
+                    ix = np.argwhere(tm_buf > to).flatten()
+                    fs1 = __fs__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                else:
+                    fs1 = None
+                
+                # add the new step
+                if fs0 is not None and ms is not None and to is not None and fs1 is not None:
+                    self.steps += [Step(fs0, ms, to, fs1)]
+                    last = self.steps[-1].landing
+                else:
+                    last = None
+
+    
     def __add_steps__(self, fs, ms ,to):
         """
         ensure the the detected sequence of foot-strikes, mid-stances and toe-offs occur correctly
@@ -828,7 +1116,6 @@ class RunningAnalysis():
         # create the errors dict
         self.errors = {'foot_strike': err_fs, 'mid_stance': err_ms, 'toe_off': err_to}
 
-    
 
     def __scale__(self, x):
         """
@@ -846,7 +1133,6 @@ class RunningAnalysis():
                 the x signal scaled to lie in the [0, 1] range.
         """
         return (x - np.min(x)) / (np.max(x) - np.min(x))
-
 
 
     def correct(self, **kwargs):
@@ -878,7 +1164,6 @@ class RunningAnalysis():
         return R
 
 
-
     def copy(self):
         new = RunningAnalysis()
         new.source = self.source
@@ -888,7 +1173,6 @@ class RunningAnalysis():
         new.n = self.n
         new.fc = self.fc
         return new
-
 
 
     def df(self):
@@ -911,7 +1195,6 @@ class RunningAnalysis():
             df.insert(0, 'Source', self.source)
             dfs = dfs.append(df, ignore_index=True, sort=False)
         return dfs
-
 
 
     def to_excel(self, file):
@@ -945,7 +1228,6 @@ class RunningAnalysis():
         pu.to_excel(file, self.df(), '__steps__')
 
         
-
     @staticmethod
     def from_excel(file, **kwargs):
         """
@@ -986,7 +1268,6 @@ class RunningAnalysis():
 
         # return R
         return R
-
 
 
     @staticmethod
@@ -1037,7 +1318,6 @@ class RunningAnalysis():
 
         # return the aligned args
         return new_args 
-
 
 
     @staticmethod
@@ -1233,7 +1513,6 @@ class RunningAnalysis():
 
         # return the figure
         return layout
-
 
 
     @property
