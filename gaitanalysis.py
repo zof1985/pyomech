@@ -218,13 +218,16 @@ class Step():
 class RunningAnalysis():
 
 
-    def __init__(self, source, **kwargs):
+    def __init__(self, source="", **kwargs):
 
         # initialize the errors dict
         self.errors = {i: np.array([]) for i in Step.events_names()[:-1]}
 
         # get the new_approach input if provided
-        new_approach = kwargs.pop("new_approach")
+        try:
+            new_approach = kwargs.pop("new_approach")
+        except Exception:
+            pass
 
         # treadmill data was provided
         if "speed" in np.array([i for i in kwargs.keys()]):
@@ -671,7 +674,7 @@ class RunningAnalysis():
                     last = None
     
 
-    def __from_treadmill_old__(self, speed, tw=2, fc=10, n=2):
+    def __from_treadmill_old__(self, speed, tw=2, fc=20, n=2):
         """
         method extracting the gait events from treadmill data using the old approach.
 
@@ -690,7 +693,7 @@ class RunningAnalysis():
         """
         
 
-        def __crossings__(self, x, th=None):
+        def crossings(x, th=None):
             """
             get the location of the th crossings in x.
 
@@ -714,7 +717,7 @@ class RunningAnalysis():
             return np.argwhere(abs(np.diff(np.sign(x - th))) == 2).flatten()
 
 
-        def __clusters__(self, x, th=None):
+        def clusters(x, th=None):
             """
             get a cluster of peaks. A cluster is a group of peaks where the interrupting minima are
             still above a given threshold.
@@ -741,7 +744,7 @@ class RunningAnalysis():
             if len(pks) == 0: return []
         
             # get the minima in x below th
-            mns = np.unique(np.concatenate([[0], __crossings__(x, th), [len(x) - 1]]).flatten())
+            mns = np.unique(np.concatenate([[0], crossings(x, th), [len(x) - 1]]).flatten())
 
             # get the clusters
             c = [pks[np.argwhere((pks > mns[i]) & (pks < mns[i + 1])).flatten()]
@@ -751,7 +754,7 @@ class RunningAnalysis():
             return [i for i in c if len(i) > 0]
 
 
-        def __fs__(self, time, position, speed, acceleration):
+        def get_fs(time, position, speed, acceleration):
             """
             This method serves the purpose of extracting the first foot-strike.
 
@@ -782,30 +785,30 @@ class RunningAnalysis():
             """
         
             # get the first peak in pos
-            pos_pks = __clusters__(position, 0.5)
+            pos_pks = clusters(position, 0.5)
             pos_pk = 0 if len(pos_pks) == 0 else pos_pks[0][0]
 
             # get the first minima in pos after the peak
-            pos_mns = __clusters__(-position[pos_pk:])
+            pos_mns = clusters(-position[pos_pk:])
             pos_mn = (len(position) - 1) if len(pos_mns) == 0 else (pos_mns[0][0] + pos_pk)
 
             # get the last speed minima between pos_pk and pos_mn
-            spe_mns = __clusters__(-speed[np.arange(pos_pk, pos_mn)])
+            spe_mns = clusters(-speed[np.arange(pos_pk, pos_mn)])
             if len(spe_mns) == 0:
                 spe_mn  = pos_mn
             else:
                 spe_mn = pos_pk - 1 + spe_mns[-1][np.argmin(speed[spe_mns[-1]])]
         
             # get the last peak in speed before spe_mn
-            spe_pks = __clusters__(speed[:spe_mn], speed[spe_mn] + 0.2)
+            spe_pks = clusters(speed[:spe_mn], speed[spe_mn] + 0.2)
             spe_pk = spe_mn if len(spe_pks) == 0 else spe_pks[-1][-1]
 
             # get the last minima in acceleration before spe_pk
-            acc_mns = __clusters__(-acceleration[:spe_pk], -2)
+            acc_mns = clusters(-acceleration[:spe_pk], -2)
             return time[spe_pk if len(acc_mns) == 0 else acc_mns[-1][-1]]
 
 
-        def __ms__(self, time, position, speed, acceleration):
+        def get_ms(time, position, speed, acceleration):
             """
             This method serves the purpose of extracting the first mid-stance.
 
@@ -836,15 +839,15 @@ class RunningAnalysis():
             """
 
             # look at the first minima in pos with value lower than its mean value
-            pos_mns = __clusters__(-position)
+            pos_mns = clusters(-position)
             pos_mn = (len(position) - 1) if len(pos_mns) == 0 else pos_mns[0][0]
         
             # get the first minima of the last speed cluster before pos_min
-            spe_mns = __clusters__(-speed[:pos_mn])
+            spe_mns = clusters(-speed[:pos_mn])
             return None if len(spe_mns) == 0 else time[spe_mns[-1][np.argmin(speed[spe_mns[-1]])]]
     
 
-        def __to__(self, time, position, speed, acceleration):
+        def get_to(time, position, speed, acceleration):
             """
             This method serves the purpose of extracting the first toe-off.
 
@@ -875,18 +878,18 @@ class RunningAnalysis():
             """
 
             # look at the first peak in pos
-            pos_pks = __clusters__(position)
+            pos_pks = clusters(position)
             pos_pk = (len(position) - 1) if len(pos_pks) == 0 else pos_pks[0][0]
         
             # get the highest peak of the last cluster in speed occurring before pos_pk
-            spe_pks = __clusters__(speed[:pos_pk])
+            spe_pks = clusters(speed[:pos_pk])
             return None if len(spe_pks) == 0 else time[spe_pks[-1][np.argmax(speed[spe_pks[-1]])]]
 
 
         # store the data
         self.tw = tw                                                       # time-window (s)
-        self.n = 2                                                         # the filter order
-        self.fc = 20                                                       # the filter cut-off frequency (hz)
+        self.n = n                                                         # the filter order
+        self.fc = fc                                                       # the filter cut-off frequency (hz)
 
         # initialize the steps output
         self.steps = []
@@ -910,11 +913,10 @@ class RunningAnalysis():
                 tm_buf = time[ix_buf]
 
                 # get the speed signal
-                sp_buf = speed.values.flatten()[ix_buf
+                sp_buf = speed.values.flatten()[ix_buf]
 
                 # get the filtered speed signal
-                spf_buf = pr.butt_filt(speed.values.flatten()[ix_buf], self.fc, 
-                                       speed.sampling_frequency, self.n, plot=False)
+                spf_buf = pr.butt_filt(sp_buf, self.fc, speed.sampling_frequency, self.n, plot=False)
                 
                 # get the acceleration data
                 ac_buf = (sp_buf[2:] - sp_buf[:-2]) / (tm_buf[2:] - tm_buf[:-2])
@@ -932,35 +934,35 @@ class RunningAnalysis():
                 if last < 0:
 
                     # ensure the signal starts from a peak
-                    t0 = __clusters__(sp_buf, 0.8)[0][0]
+                    t0 = clusters(sp_buf, 0.8)[0][0]
                     tm_buf = tm_buf[t0:]
                     ps_buf = ps_buf[t0:]
                     sp_buf = sp_buf[t0:]
                     ac_buf = ac_buf[t0:]
 
                     # get the foot-strike
-                    fs0 = __fs__(tm_buf, ps_buf, sp_buf, ac_buf)
+                    fs0 = get_fs(tm_buf, ps_buf, sp_buf, ac_buf)
                 else:
                     fs0 = self.steps[-1].landing
 
                 # apply __ms__
                 if fs0 is not None:
                     ix = np.argwhere(tm_buf > fs0).flatten()
-                    ms = __ms__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                    ms = get_ms(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
                 else:
                     ms = None
 
                 # apply __to__
                 if ms is not None:
                     ix = np.argwhere(tm_buf > ms).flatten()
-                    to = __to__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                    to = get_to(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
                 else:
                      to = None
                 
                 # apply __fs__ again
                 if to is not None:
                     ix = np.argwhere(tm_buf > to).flatten()
-                    fs1 = __fs__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                    fs1 = get_fs(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
                 else:
                     fs1 = None
                 
