@@ -29,7 +29,6 @@
     <Compile Include="processing.py" />
     <Compile Include="regression.py" />
     <Compile Include="stats.py" />
-    <Compile Include="symmetry.py" />
     <Compile Include="utils.py" />
     <Compile Include="vectors.py" />
     <Compile Include="__init__.py" />
