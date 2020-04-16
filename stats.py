@@ -174,61 +174,6 @@ class Test(EffectSize):
 
 
 
-class TestGroup():
-
-
-
-    def __init__(self, **kwargs):
-        """
-        a collector of Test objects by name. It provides easy to access methods to manage families of tests being
-        part of multiple tests.
-
-        Input:
-            kwargs: named Test objects.
-        """
-        for i in kwargs:
-            if isinstance(kwargs[i], Test):
-                setattr(self, i, kwargs[i])
-
-
-
-    def to_df(self):
-        """
-        Create a column DataFrame containing all the outcomes of the tests.
-        """
-        out = []
-        for attr in self.attributes:
-            out += [pd.DataFrame([attr], index='Test', columns=[0]).append(getattr(self, attr).to_df())]
-        return pd.concat(out, axis=1)
-
-
-
-    def copy(self):
-        """
-        create a copy of the current Test object.
-        """
-        return TestGroup(**{i: getattr(self, i) for i in self.attributes()})
-
-
-
-    def attributes(self):
-        """
-        get the list of attributes stored into this object.
-        """
-        return [i for i in self.__dict__]
-
-
-
-    def __repr__(self):
-        return self.__str__()
-
-
-
-    def __str__(self):
-        return "\n".join([attr + "\n" + getattr(self, attr).__str__() for attr in self.attributes()])
-
-
-
 ########    IMPLEMENTATION CLASSES    ########
 
 
