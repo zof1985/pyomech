@@ -25,6 +25,109 @@ fig_size = 300  # pixels
 
 
 
+def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=True):
+    """
+    apply a moving average filter with the given order to y. The only padding style currently supported is "mirror"
+    which specularly extends the signal at each end to the required amount of samples necessary to preserve the signal
+    length output.
+    
+    Input:
+        y:          (1D array)
+                    a 1D array signal to be filtered
+
+        n:          (int)
+                    the order of the filter. It must be odd.
+
+        offset:     (float)
+                    should the window be centered around the current sample?.
+                    The offset value should range between -1 and 1. with -1 meaning that at each i-th sample the 
+                    window of length n over which the mean will be used as filter output for i will be calculated
+                    having i as starting value. Conversely, 1 means that for the same i-th sample, n-1 samples
+                    behind i will be used to calculate the mean. An offset of value 0 will consider i centered
+                    within the filtering window.
+
+        pad_style:  (str)
+                    currently "mirror" is the only padding style supported. This style means that in order to
+                    preserve the length of the output signal, the raw signal is mirrored at each end before
+                    applying the filter.
+
+        plot:       (bool)
+                    if True a bokeh figure representing the output of the filter.
+
+    Output:
+        z:          (1D array)
+                    The filtered signal.
+
+        p:          (bokeh.figure, optional)
+                    if plot is True, the a figure representing the output of the filter.
+    """
+
+    # check n is odd
+    assert n % 2 == 1, "'n' must be odd."
+    assert n > 0, "'n' must be higher than 0."
+
+    # ensure n is an int
+    n = int(n)
+
+    # check offset is within the [-1, 1] range
+    assert (offset >= -1) & (offset <= 1), "'offset' must be a scalar within the [-1, 1] range."
+
+    # ensure pad_style is supported
+    assert pad_style == "mirror", "'mirror' is the only pad_style supported."
+
+    # get the number of padding samples necessary for each end
+    left_pad = int(abs(np.round((n - 1) / 2 * (offset - 1))))
+    right_pad = n - 1 - left_pad
+
+    # get the padded signal
+    if pad_style == "mirror":
+
+        # assuming that left_pad and right_pad equal 2 and 3 respectively, we want:
+        #           y = [ABCDEFGHI]     -->       y_padded = [CB] [ABCDEFGHI] [HGF]
+        y_pad = np.concatenate([y[1:(left_pad + 1)][::-1], y, y[-(right_pad + 1):-1][::-1]]).flatten()
+
+    # to reduce the computation time rather than calculating the mean value corresponding to each sample of the output
+    # signal, we calculate the filter from the cumulative sum. This greatly reduces the number of operations, thus the
+    # computational time, especially if the filter order is high.
+    y_c = np.cumsum(y_pad)  # cumulative sum
+    z = (y_c[(n - 1):] - np.append([0], y_c[:(len(y) - 1)])) / n  # filtered signal
+    
+    # check if the plot must be provided
+    if not plot:
+        return z
+
+    # generate the output plot figure
+    p = figure(width=fig_size, height=fig_size, title="moving average filter")
+                
+    # edit the axes labels
+    p.xaxis.axis_label = "X"
+    p.yaxis.axis_label = "Y"
+
+    # plot the True data
+    x = np.arange(len(y))
+    p.scatter(x, y, size=2, color="navy", alpha=0.5, marker="circle", legend_label="Raw")
+    p.line(x, y, line_width=1, color="navy", alpha=0.5, line_dash=(3, 3), legend_label="Raw")
+    
+    # plot the interpolated data
+    p.scatter(x, z, size=2, color="darkred", alpha=0.5, marker="circle", legend_label="Filtered")
+    p.line(x, z, line_width=1, color="darkred", alpha=0.5, line_dash=(3, 3), legend_label="Filtered")
+
+    # set the legend position
+    p.legend.location = "top_right"
+    p.legend.title = "Legend"
+    p.legend.click_policy = "hide"
+    
+    # edit the grids
+    p.xgrid.grid_line_alpha=0.3
+    p.ygrid.grid_line_alpha=0.3
+    p.xgrid.grid_line_dash=[5, 5]
+    p.ygrid.grid_line_dash=[5, 5]
+    
+    # return all
+    return z, p
+
+
+
 def cubic_spline_interpolation(y, x_old=None, x_new=None, n=None, plot=True, **kwargs):
     """
     Get the cubic spline interpolation of y.
@@ -87,7 +190,7 @@ def cubic_spline_interpolation(y, x_old=None, x_new=None, n=None, plot=True, **k
     
     # plot the interpolated data
     p.scatter(x_new, ys, size=2, color="darkred", alpha=0.5, marker="circle", legend_label="Interpolated")
-    p.line(x_new, ys, line_width=1, color="navy", alpha=0.5, line_dash=(3, 3), legend_label="Interpolated")
+    p.line(x_new, ys, line_width=1, color="darkred", alpha=0.5, line_dash=(3, 3), legend_label="Interpolated")
 
     # set the legend position
     p.legend.location = "top_right"

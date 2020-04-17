@@ -537,8 +537,9 @@ class RunningAnalysis():
                 pk:     (int)
                         the location of the foot-strike in sample points
             """
+            
             fc = self.fc
-            while True:
+            while fc < 20:
 
                 # get the filtered signal
                 spf = pr.butt_filt(sp, cutoffs=fc, order=self.n,
@@ -561,12 +562,12 @@ class RunningAnalysis():
                     fc += 1
 
 
-        def get_ms(spf):
+        def get_ms(sp):
             """
             get the minima in the speed signal 
             
             Input:
-                spf:    (1D array)
+                sp:     (1D array)
                         the speed signal
 
             Output:
@@ -574,22 +575,28 @@ class RunningAnalysis():
                         the location of the mid-stance in sample points
             """
             
+            # scale and filter the signal
+            spf = self.__scale__(pr.moving_average_filter(sp, n=self.n, offset=0, pad_style="mirror", plot=False))
+
             # get the first minima lower than 0.4
             return pr.find_peaks(-spf, -0.4, plot=False)[0]
         
         
-        def get_to(spf):
+        def get_to(sp):
             """
             get the first peak in the filtered signal having amplitude above the 80% of the overall signal amplitude 
             
             Input:
-                spf:    (1D array)
+                sp:     (1D array)
                         the (filtered) speed signal
 
             Output:
                 pk:     (int)
                         the location of the toe-off in sample points
             """
+
+            # scale and filter the signal
+            spf = self.__scale__(pr.moving_average_filter(sp, n=self.n, offset=0, pad_style="mirror", plot=False))
 
             # get the first peak higher than 0.8 in the filtered speed
             return pr.find_peaks(spf, 0.8, plot=False)[0]
@@ -607,7 +614,7 @@ class RunningAnalysis():
         # start the simulation
         time = speed.index.to_numpy()
         ix_buf = np.argwhere((time >= 0) & (time <= self.tw)).flatten().tolist()
-        while last is not None and last < time[-1]:
+        while last is not None and last < time[-n]:
 
             # update the buffer index
             ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
@@ -621,21 +628,16 @@ class RunningAnalysis():
                 # get the data in the buffer and filter the speed data
                 tm_buf = time[ix_buf]
 
-                # get the scaled speed signal
-                sp_buf = self.__scale__(speed.values.flatten()[ix_buf])
+                # get the speed signal within the current buffer
+                sp_buf = speed.values.flatten()[ix_buf]
 
-                # get the scaled and filtered speed signal
-                spf_buf = self.__scale__(pr.butt_filt(speed.values.flatten()[ix_buf], self.fc, 
-                                                      speed.sampling_frequency, self.n, plot=False))
-                                                
                 # find the foot-strike
                 if last < 0:
 
                     # ensure the signal starts from a toe-off
-                    t0 = get_to(spf_buf)
+                    t0 = get_to(sp_buf)
                     tm_buf = tm_buf[t0:]
                     sp_buf = sp_buf[t0:]
-                    spf_buf = spf_buf[t0:]
 
                     # get the foot-strike
                     try:
@@ -648,14 +650,14 @@ class RunningAnalysis():
                 # find the mid-stance
                 try:
                     ix = np.argwhere(tm_buf > fs0).flatten()
-                    ms = tm_buf[ix][get_ms(spf_buf[ix])]
+                    ms = tm_buf[ix][get_ms(sp_buf[ix])]
                 except Exception:
                     ms = None
                 
                 # fing the toe-off
                 try:
                     ix = np.argwhere(tm_buf > ms).flatten()
-                    to = tm_buf[ix][get_to(spf_buf[ix])]
+                    to = tm_buf[ix][get_to(sp_buf[ix])]
                 except Exception:
                     to = None
                                 
@@ -1134,6 +1136,8 @@ class RunningAnalysis():
             y:  (1D array)
                 the x signal scaled to lie in the [0, 1] range.
         """
+        if np.max(x) == np.min(x):
+            return np.zeros(x.shape)
         return (x - np.min(x)) / (np.max(x) - np.min(x))
 
 
