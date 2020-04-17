@@ -617,7 +617,7 @@ class RunningAnalysis():
 
 
         proceed = True
-        while proceed and len(ix_buf >= self.tw / 2 * self.fs):
+        while proceed and len(ix_buf >= self.tw / 2 * speed.sampling_frequency):
 
             # update the buffer index
             ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
