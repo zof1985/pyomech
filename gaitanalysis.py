@@ -612,12 +612,12 @@ class RunningAnalysis():
 
         # initialize the steps output
         self.steps = []
-        last = -1
 
         # start the simulation
         time = speed.index.to_numpy()
         ix_buf = np.argwhere((time >= 0) & (time <= self.tw)).flatten().tolist()
-        while last is not None and last < time[-n]:
+        last = False
+        while not last:
 
             # update the buffer index
             ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
@@ -674,9 +674,8 @@ class RunningAnalysis():
                 # add the new step
                 if fs0 is not None and ms is not None and to is not None and fs1 is not None:
                     self.steps += [Step(fs0, ms, to, fs1)]
-                    last = self.steps[-1].landing
                 else:
-                    last = None
+                    last = True
     
 
     def __from_treadmill_old__(self, speed, tw=2, fc=20, n=2):
