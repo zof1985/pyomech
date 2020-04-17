@@ -576,7 +576,8 @@ class RunningAnalysis():
             """
             
             # scale and filter the signal
-            spf = self.__scale__(pr.moving_average_filter(sp, n=self.n, offset=0, pad_style="mirror", plot=False))
+            spf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, order=self.n,
+                                              sampling_frequency=self.fs, plot=False))
 
             # get the first minima lower than 0.4
             return pr.find_peaks(-spf, -0.4, plot=False)[0]
@@ -596,7 +597,8 @@ class RunningAnalysis():
             """
 
             # scale and filter the signal
-            spf = self.__scale__(pr.moving_average_filter(sp, n=self.n, offset=0, pad_style="mirror", plot=False))
+            spf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, order=self.n,
+                                              sampling_frequency=self.fs, plot=False))
 
             # get the first peak higher than 0.8 in the filtered speed
             return pr.find_peaks(spf, 0.8, plot=False)[0]
@@ -606,6 +608,7 @@ class RunningAnalysis():
         self.tw = tw
         self.n = n
         self.fc = fc
+        self.fs = speed.sampling_frequency
 
         # initialize the steps output
         self.steps = []
