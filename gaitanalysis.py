@@ -541,8 +541,8 @@ class RunningAnalysis():
                         the location of the foot-strike in sample points
             """
             
-            fc = self.fc
-            while fc < 20:
+            fc = min(20, self.fc)
+            while fc <= 20:
 
                 # get the filtered signal
                 spf = self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=self.n,
@@ -575,7 +575,7 @@ class RunningAnalysis():
             """
             
             # get the first minima lower than 0.4
-            return pr.find_peaks(-spf, -0.4, plot=False)[0]
+            return pr.find_peaks(-sp, -0.4, plot=False)[0]
         
         
         def get_to(sp):
@@ -592,7 +592,7 @@ class RunningAnalysis():
             """
                         
             # get the first peak higher than 0.8 in the filtered speed
-            return pr.find_peaks(spf, 0.8, plot=False)[0]
+            return pr.find_peaks(sp, 0.8, plot=False)[0]
 
 
         ########    SETUP    ########
