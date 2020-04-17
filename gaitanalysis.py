@@ -545,24 +545,17 @@ class RunningAnalysis():
             while fc < 20:
 
                 # get the filtered signal
-                spf = pr.butt_filt(sp, cutoffs=fc, order=self.n,
-                                   sampling_frequency=speed.sampling_frequency, plot=False)
+                spf = self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=self.n,
+                                                  sampling_frequency=speed.sampling_frequency, plot=False))
 
-                # get the first minima in spf lower than 0.4
-                mn = pr.find_peaks(-self.__scale__(spf), height=-0.4, plot=False)[0]
+                # get the last peak in the first derivative of spf before the next mid-stance
+                pks = pr.find_peaks((spf[2:] - spf[:-2])[:get_ms(spf)], plot=False)
 
-                # get the last peak in the first derivative of spf before mn
-                pks = pr.find_peaks((spf[2:] - spf[:-2])[:mn], plot=False)
-
-                # check if pks is not empty
-                if len(pks) > 0:
-
-                    # return the first peak
-                    return pks[-1] + 1
+                # return the last peak check if pks is not empty
+                if len(pks) > 0: return pks[-1] + 1
                 
-                # increase the cutoff frequency and repeat
-                else:
-                    fc += 1
+                # otherwise increase the cutoff frequency and repeat
+                else: fc += 1
 
             # something went wrong. Thus return nan
             return np.nan
@@ -609,7 +602,6 @@ class RunningAnalysis():
         self.tw = tw
         self.n = n
         self.fc = fc
-        self.fs = speed.sampling_frequency
 
         # initialize the steps output
         self.steps = []
@@ -637,17 +629,19 @@ class RunningAnalysis():
             sp = speed.values.flatten()[ix_buf]
 
             # to speed-up the search calculate also a scaled and filtered copy of the speed signal
-            sf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, n=self.n, sampling_frequency=self.fs, plot=False))
+            sf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, order=self.n,
+                                             sampling_frequency=speed.sampling_frequency, plot=False))
 
             # ensure the signal starts from a toe-off
             if len(self.steps) == 0:
                 t0 = get_to(sf)
                 tm = tm[t0:]
                 sp = sp[t0:]
+                sf = sf[t0:]
 
                 # get the first "foot-strike"
                 try:
-                    fs0 = tm[get_fs(sp)]
+                    fs0 = tm[get_fs(sp)]  # here the unfiltered signal is passed to "get_fs"
                 except Exception:
                     fs0 = np.nan
 
@@ -658,21 +652,21 @@ class RunningAnalysis():
             # find the mid-stance
             try:
                 ix = np.argwhere(tm > fs0).flatten()
-                ms = tm[ix][get_ms(sf[ix])]
+                ms = tm[ix][get_ms(sf[ix])]   # here the filtered signal is passed to "get_ms"
             except Exception:
                 ms = np.nan
                 
             # fing the toe-off
             try:
                 ix = np.argwhere(tm > ms).flatten()
-                to = tm[ix][get_to(sf[ix])]
+                to = tm[ix][get_to(sf[ix])]  # here the filtered signal is passed to "get_to"
             except Exception:
                 to = np.nan
                                 
             # find the landing
             try:
                 ix = np.argwhere(tm > to).flatten()
-                fs1 = tm[ix][get_fs(sp[ix])]
+                fs1 = tm[ix][get_fs(sp[ix])]   # again we pass the unfiltered signal to "get_fs"
             except Exception:
                 fs1 = np.nan
                 
