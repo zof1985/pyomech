@@ -622,59 +622,71 @@ class RunningAnalysis():
             # update the buffer index
             ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
 
-            # get the data in the buffer and filter the speed data
-            tm = time[ix_buf]
+            # check if the algorithm must run
+            if len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing:
 
-            # get the speed signal within the current buffer
-            sp = speed.values.flatten()[ix_buf]
+                # get the data in the buffer and filter the speed data
+                tm = time[ix_buf]
 
-            # to speed-up the search calculate also a scaled and filtered copy of the speed signal
-            sf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, order=self.n,
-                                             sampling_frequency=speed.sampling_frequency, plot=False))
+                # get the speed signal within the current buffer
+                sp = speed.values.flatten()[ix_buf]
 
-            # ensure the signal starts from a toe-off
-            if len(self.steps) == 0:
-                t0 = get_to(sf)
-                tm = tm[t0:]
-                sp = sp[t0:]
-                sf = sf[t0:]
+                # to speed-up the search calculate also a scaled and filtered copy of the speed signal
+                sf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, order=self.n,
+                                                 sampling_frequency=speed.sampling_frequency, plot=False))
 
-                # get the first "foot-strike"
-                try:
-                    fs0 = tm[get_fs(sp)]  # here the unfiltered signal is passed to "get_fs"
-                except Exception:
-                    fs0 = np.nan
+                # ensure the signal starts from a toe-off
+                if len(self.steps) == 0:
+                    t0 = get_to(sf)          # here the filtered signal is passed to "get_to"
+                    tm = tm[t0:]
+                    sp = sp[t0:]
+                    sf = sf[t0:]
 
-            # get the foot-strike as the last landing
-            else:
-                fs0 = self.steps[-1].landing
+                    # get the first "foot-strike"
+                    try:
+                        fs0 = tm[get_fs(sp)]  # here the unfiltered signal is passed to "get_fs"
+                    except Exception:
+                        fs0 = np.nan
 
-            # find the mid-stance
-            try:
-                ix = np.argwhere(tm > fs0).flatten()
-                ms = tm[ix][get_ms(sf[ix])]   # here the filtered signal is passed to "get_ms"
-            except Exception:
-                ms = np.nan
+                # get the foot-strike as the last landing
+                else:
+                    fs0 = self.steps[-1].landing
+
+                # find the mid-stance
+                if not np.isnan(fs0):
+                    try:
+                        ix = np.argwhere(tm > fs0).flatten()
+                        ms = tm[ix][get_ms(sf[ix])]   # here the filtered signal is passed to "get_ms"
+                    except Exception:
+                        ms = np.nan
+                else:
+                    ms = np.nan
                 
-            # fing the toe-off
-            try:
-                ix = np.argwhere(tm > ms).flatten()
-                to = tm[ix][get_to(sf[ix])]  # here the filtered signal is passed to "get_to"
-            except Exception:
-                to = np.nan
+                # fing the toe-off
+                if not np.isnan(ms):
+                    try:
+                        ix = np.argwhere(tm > ms).flatten()
+                        to = tm[ix][get_to(sf[ix])]  # here the filtered signal is passed to "get_to"
+                    except Exception:
+                        to = np.nan
+                else:
+                    to = np.nan
                                 
-            # find the landing
-            try:
-                ix = np.argwhere(tm > to).flatten()
-                fs1 = tm[ix][get_fs(sp[ix])]   # again we pass the unfiltered signal to "get_fs"
-            except Exception:
-                fs1 = np.nan
+                # find the landing
+                if not np.isnan(to):
+                    try:
+                        ix = np.argwhere(tm > to).flatten()
+                        fs1 = tm[ix][get_fs(sp[ix])]   # again we pass the unfiltered signal to "get_fs"
+                    except Exception:
+                        fs1 = np.nan
+                else:
+                    fs1 = np.nan
                 
-            # add the new step
-            if not np.any([np.isnan(i) for i in [fs0, ms, to, fs1]]):
-                self.steps += [Step(fs0, ms, to, fs1)]
-            else:
-                proceed = False
+                # add the new step
+                if not np.any([np.isnan(i) for i in [fs0, ms, to, fs1]]):
+                    self.steps += [Step(fs0, ms, to, fs1)]
+                else:
+                    proceed = False
     
 
     def __from_treadmill_old__(self, speed, tw=2, fc=20, n=2):
