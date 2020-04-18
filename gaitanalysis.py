@@ -526,7 +526,7 @@ class RunningAnalysis():
 
         ########    GAIT EVENTS DETECTING METHODS    ########
 
-
+        '''
         def get_fs(sp):
             """
             iteratively smooth the signal with higher filter cut-off and search for a peak in its first derivative
@@ -559,6 +559,41 @@ class RunningAnalysis():
 
             # something went wrong. Thus return nan
             return np.nan
+        '''
+
+
+        def get_fs(sp):
+            """
+            iteratively smooth the signal with higher filter cut-off and search for a peak in its first derivative
+            until a peak is found before reaching a local minima in speed with amplitude lower than its half 
+            
+            Input:
+                sp:     (1D array)
+                        the speed signal
+
+            Output:
+                pk:     (int)
+                        the location of the foot-strike in sample points
+            """
+            
+            fc = min(20, self.fc)
+            while fc <= 20:
+
+                # get the filtered signal
+                spf = self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=self.n,
+                                                  sampling_frequency=speed.sampling_frequency, plot=False))
+
+                # find the peaks in the first derivative within the next mid-stance
+                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(get_ms(spf) - 1)], plot=False)
+
+                # return the last peak if pks is not empty
+                if len(pks) > 0: return pks[-1] + 1
+                
+                # otherwise increase the cutoff frequency and repeat
+                else: fc += 1
+
+            # something went wrong. Thus return nan
+            return np.nan
 
 
         def get_ms(sp):
@@ -575,7 +610,19 @@ class RunningAnalysis():
             """
             
             # get the first minima lower than 0.4
-            return pr.find_peaks(-sp, -0.4, plot=False)[0]
+            # return pr.find_peaks(-sp, -0.4, plot=False)[0]
+
+            # get the next toe-off or the last point in the set
+            end = get_to(sp)
+            if np.isnan(end):
+                end = len(sp) - 1
+
+            # get the minimum value in sp within l2
+            mn = np.argmin(sp[:end])
+            
+            # if mn corresponds to to return nan (the identification of the minima in the signal is not reliable)
+            # otherwise return mn
+            return np.nan if mn == end else mn
         
         
         def get_to(sp):
