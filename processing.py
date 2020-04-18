@@ -470,13 +470,13 @@ def butt_filt(y, cutoffs, sampling_frequency, order=4, type='lowpass', phase_cor
     """
 
     # get the filter coefficients
-    (B, A) = ss.butter(order, (np.array([cutoffs]).flatten() / (0.5 * sampling_frequency)), type)
+    sos = ss.butter(order, (np.array([cutoffs]).flatten() / (0.5 * sampling_frequency)), type, output="sos")
 
     # get the filtered data
     if phase_corrected:
-        yf = ss.filtfilt(B, A, y)
+        yf = ss.sosfiltfilt(sos, y)
     else:
-        yf = ss.lfilter(B, A, y)
+        yf = ss.sosfilt(sos, y)
     
         # return the crossovers
     if not plot:

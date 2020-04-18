@@ -129,7 +129,13 @@ class Step():
 
 
     def __str__(self):
-        return "\n".join(["{:25s}{:0.3f}".format(i + ":", getattr(self, i)) for i in Step.attr_names()])
+        txt = []
+        for i in Step.attr_names():
+            if getattr(self, i) is None:
+                txt += ["{:25s}".format(i + ": ")]
+            else:
+                txt += ["{:25s}{:0.3f}".format(i + ":", getattr(self, i))]
+        return "\n".join(txt)
 
 
 
@@ -218,11 +224,9 @@ class Step():
 class RunningAnalysis():
 
 
+
     def __init__(self, source="", **kwargs):
-
-        # initialize the errors dict
-        self.errors = {i: np.array([]) for i in Step.events_names()[:-1]}
-
+                
         # get the new_approach input if provided
         try:
             new_approach = kwargs.pop("new_approach")
@@ -254,6 +258,7 @@ class RunningAnalysis():
 
         # add the new source
         self.source = source
+    
 
 
     def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None, meta_left=None,
@@ -464,6 +469,7 @@ class RunningAnalysis():
         self.__add_steps__(fs, ms, to)
         
 
+
     def __from_blackbox__(self, blackbox, tw=None, fc=None, n=None):
         """
         method extracting the gait events from blackbox data.
@@ -501,9 +507,10 @@ class RunningAnalysis():
         to_loc = np.append([0], np.diff(blackbox['wmax'].values.flatten())) == 1
         to = blackbox.loc[to_loc].index.to_numpy() + self.blackbox_delays['wmin']
         
-        # store the steps and the errors
+        # store the steps
         self.__add_steps__(fs, ms, to)
   
+
         
     def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2):
         """
@@ -562,7 +569,7 @@ class RunningAnalysis():
         '''
 
 
-        def get_fs(sp):
+        def __get_fs__(sp):
             """
             iteratively smooth the signal with higher filter cut-off and search for a peak in its first derivative
             until a peak is found before reaching a local minima in speed with amplitude lower than its half 
@@ -584,7 +591,7 @@ class RunningAnalysis():
                                                   sampling_frequency=speed.sampling_frequency, plot=False))
 
                 # find the peaks in the first derivative within the next mid-stance
-                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(get_ms(spf) - 1)], plot=False)
+                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(__get_ms__(spf) - 1)], plot=False)
 
                 # return the last peak if pks is not empty
                 if len(pks) > 0: return pks[-1] + 1
@@ -596,7 +603,7 @@ class RunningAnalysis():
             return np.nan
 
 
-        def get_ms(sp):
+        def __get_ms__(sp):
             """
             get the minima in the speed signal 
             
@@ -612,20 +619,26 @@ class RunningAnalysis():
             # get the first minima lower than 0.4
             # return pr.find_peaks(-sp, -0.4, plot=False)[0]
 
-            # get the next toe-off or the last point in the set
-            end = get_to(sp)
-            if np.isnan(end):
-                end = len(sp) - 1
+            # find the first flexion point (either a local maxima or minima)
+            pk = pr.find_peaks(abs(sp), plot=False)[0]
 
-            # get the minimum value in sp within l2
+            # get the first point in the signal below 0.8 and after pk
+            start = np.argwhere(sp[pk:] < 0.8).flatten()[0] + pk
+
+            # get the next toe-off or the last point in the sp if to is not found
+            end = __get_to__(sp[start:])
+            if np.isnan(end):
+                end = len(sp) - 1 + start
+
+            # get the minimum value in sp within end
             mn = np.argmin(sp[:end])
             
-            # if mn corresponds to to return nan (the identification of the minima in the signal is not reliable)
+            # if mn corresponds to end return nan (the identification of the minima in the signal is not reliable)
             # otherwise return mn
             return np.nan if mn == end else mn
         
         
-        def get_to(sp):
+        def __get_to__(sp):
             """
             get the first peak in the filtered signal having amplitude above the 80% of the overall signal amplitude 
             
@@ -664,13 +677,15 @@ class RunningAnalysis():
 
 
         proceed = True
-        while proceed and len(ix_buf >= self.tw / 2 * speed.sampling_frequency):
+        while proceed:
 
             # update the buffer index
             ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
 
             # check if the algorithm must run
-            if len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing:
+            if len(ix_buf) < 11:
+                proceed = False
+            elif len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing:
 
                 # get the data in the buffer and filter the speed data
                 tm = time[ix_buf]
@@ -684,14 +699,14 @@ class RunningAnalysis():
 
                 # ensure the signal starts from a toe-off
                 if len(self.steps) == 0:
-                    t0 = get_to(sf)          # here the filtered signal is passed to "get_to"
+                    t0 = __get_to__(sf)          # here the filtered signal is passed to "get_to"
                     tm = tm[t0:]
                     sp = sp[t0:]
                     sf = sf[t0:]
 
                     # get the first "foot-strike"
                     try:
-                        fs0 = tm[get_fs(sp)]  # here the unfiltered signal is passed to "get_fs"
+                        fs0 = tm[__get_fs__(sp)]  # here the unfiltered signal is passed to "get_fs"
                     except Exception:
                         fs0 = np.nan
 
@@ -703,7 +718,7 @@ class RunningAnalysis():
                 if not np.isnan(fs0):
                     try:
                         ix = np.argwhere(tm > fs0).flatten()
-                        ms = tm[ix][get_ms(sf[ix])]   # here the filtered signal is passed to "get_ms"
+                        ms = tm[ix][__get_ms__(sf[ix])]   # here the filtered signal is passed to "get_ms"
                     except Exception:
                         ms = np.nan
                 else:
@@ -713,7 +728,7 @@ class RunningAnalysis():
                 if not np.isnan(ms):
                     try:
                         ix = np.argwhere(tm > ms).flatten()
-                        to = tm[ix][get_to(sf[ix])]  # here the filtered signal is passed to "get_to"
+                        to = tm[ix][__get_to__(sf[ix])]  # here the filtered signal is passed to "get_to"
                     except Exception:
                         to = np.nan
                 else:
@@ -723,7 +738,7 @@ class RunningAnalysis():
                 if not np.isnan(to):
                     try:
                         ix = np.argwhere(tm > to).flatten()
-                        fs1 = tm[ix][get_fs(sp[ix])]   # again we pass the unfiltered signal to "get_fs"
+                        fs1 = tm[ix][__get_fs__(sp[ix])]   # again we pass the unfiltered signal to "get_fs"
                     except Exception:
                         fs1 = np.nan
                 else:
@@ -735,6 +750,7 @@ class RunningAnalysis():
                 else:
                     proceed = False
     
+
 
     def __from_treadmill_old__(self, speed, tw=2, fc=20, n=2):
         """
@@ -1036,6 +1052,7 @@ class RunningAnalysis():
                     last = None
 
     
+
     def __add_steps__(self, fs, ms ,to):
         """
         ensure the the detected sequence of foot-strikes, mid-stances and toe-offs occur correctly
@@ -1097,20 +1114,16 @@ class RunningAnalysis():
                 after:      (float)
                             the time of the first event in events occurring after reference or -1 if that event is
                             not found.
-                
-                errors:     (1D array)
-                            the list of events in the provided list occuring before out
 
                 clean:      (1D array)
                             the list of events remaining after out
             """
 
             after = events[events > reference]
-            errors = events[events < reference]
             try:
-                return after[0], errors, events[events > after[0]]
+                return after[0], events[events > after[0]]
             except Exception:
-                return -1, errors, []
+                return -1, []
 
 
         # prepare the data
@@ -1147,14 +1160,11 @@ class RunningAnalysis():
 
         # iterate the seach of new events
         while ok:
-            new_ms, err_ms, ms_buf = first_after(ms_buf, new_fs)
-            self.errors['mid_stance'] = np.append(self.errors['mid_stance'], err_ms)
+            new_ms, ms_buf = first_after(ms_buf, new_fs)
             if new_ms != -1:
-                new_to, err_to, to_buf = first_after(to_buf, new_ms)
-                self.errors['toe_off'] = np.append(self.errors['toe_off'], err_to)
+                new_to, to_buf = first_after(to_buf, new_ms)
                 if new_to != -1:
-                    new_ln, err_fs, fs_buf = first_after(fs_buf, new_to)
-                    self.errors['foot_strike'] = np.append(self.errors['foot_strike'], err_fs)
+                    new_ln, fs_buf = first_after(fs_buf, new_to)
                     if new_ln != -1: 
 
                         # a full event was found. Therefore add it to the output data
@@ -1177,8 +1187,6 @@ class RunningAnalysis():
         # create the Steps dict
         self.steps = [Step(fs_out[i], ms_out[i], to_out[i], fs_out[i + 1]) for i in np.arange(len(ms_out))]
 
-        # create the errors dict
-        self.errors = {'foot_strike': err_fs, 'mid_stance': err_ms, 'toe_off': err_to}
 
 
     def __scale__(self, x):
@@ -1199,6 +1207,23 @@ class RunningAnalysis():
         if np.max(x) == np.min(x):
             return np.zeros(x.shape)
         return (x - np.min(x)) / (np.max(x) - np.min(x))
+
+
+
+    def __repr__(self):
+        return self.__str__()
+
+
+
+    def __str__(self):
+        txt = self.df().__str__()
+        txt += "\n\n"
+        txt += "{:25s}".format("Source:") + self.source + "\n"
+        txt += "{:25s}".format("Time window (s):") + (str(self.tw) if self.tw is not None else "") + "\n"
+        txt += "{:25s}".format("Filter order:") + (str(self.n) if self.n is not None else "") + "\n"
+        txt += "{:25s}".format("Filter cut-off (Hz):") + (str(self.fc) if self.fc is not None else "")
+        return txt
+
 
 
     def correct(self, **kwargs):
@@ -1230,15 +1255,16 @@ class RunningAnalysis():
         return R
 
 
+
     def copy(self):
         new = RunningAnalysis()
         new.source = self.source
-        new.errors = self.errors.copy()
         new.steps = self.steps
         new.tw = self.tw
         new.n = self.n
         new.fc = self.fc
         return new
+
 
 
     def df(self):
@@ -1263,6 +1289,7 @@ class RunningAnalysis():
         return dfs
 
 
+
     def to_excel(self, file):
         """
         export the current RunningAnalysis object to an excel file.
@@ -1278,20 +1305,10 @@ class RunningAnalysis():
         # store the parameters
         params = pd.DataFrame({'source': self.source, 'tw': self.tw, 'n': self.n, 'fc': self.fc}, index=[0])
         pu.to_excel(file, params, '__params__')
-
-        # ensure errors have the same length
-        m = np.max([len(np.array([self.errors[i]]).flatten()) for i in self.errors])
-        err_df = pd.DataFrame()
-        for i in self.errors:
-            v = np.zeros((m)).flatten()
-            v[:len(np.array([self.errors[i]]).flatten())] = self.errors[i]
-            err_df[i] = pd.Series(v)
-
-        # store the errors
-        pu.to_excel(file, err_df, '__errors__')
         
         # store the steps
         pu.to_excel(file, self.df(), '__steps__')
+
 
         
     @staticmethod
@@ -1311,7 +1328,7 @@ class RunningAnalysis():
         """
 
         # get the data
-        dfs = pu.from_excel(file, sheets=['__params__', '__errors__', '__steps__'], **kwargs)
+        dfs = pu.from_excel(file, sheets=['__params__', '__steps__'], **kwargs)
 
         # generate an empty RunningAnalysis object
         R = RunningAnalysis()
@@ -1319,21 +1336,13 @@ class RunningAnalysis():
         # add the parameters
         [setattr(R, i, dfs['__params__'][i].values[0]) for i in dfs['__params__']]
         
-        # add the errors
-        for i in dfs['__errors__']:
-            R.errors[i] = np.squeeze(dfs['__errors__'][i].values)
-
-            # remove the zeros at the end
-            loc = np.argwhere(R.errors[i] == 0).flatten()
-            if len(loc) > 0:
-                R.errors[i] = R.errors[i][:loc[-1]]
-
         # add the steps
         for i in np.arange(dfs['__steps__'].shape[0]):
             R.steps += [Step(*dfs['__steps__'][np.append(Step.events_names(), ['side'])].values[i])]
 
         # return R
         return R
+
 
 
     @staticmethod
@@ -1384,6 +1393,7 @@ class RunningAnalysis():
 
         # return the aligned args
         return new_args 
+
 
 
     @staticmethod
@@ -1579,6 +1589,7 @@ class RunningAnalysis():
 
         # return the figure
         return layout
+
 
 
     @property
