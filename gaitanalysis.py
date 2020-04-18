@@ -587,8 +587,7 @@ class RunningAnalysis():
             while fc <= 20:
 
                 # get the filtered signal
-                spf = self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=self.n,
-                                                  sampling_frequency=speed.sampling_frequency, plot=False))
+                spf = __smooth__(sp, n=self.n, fc=fc, fs=speed.sampling_frequency)
 
                 # find the peaks in the first derivative within the next mid-stance
                 pks = pr.find_peaks((spf[2:] - spf[:-2])[:(__get_ms__(spf) - 1)], plot=False)
@@ -655,6 +654,33 @@ class RunningAnalysis():
             return pr.find_peaks(sp, 0.8, plot=False)[0]
 
 
+        def __smooth__(sp, n=None, fc=None, fs=None):
+            """
+            low-pass filter and scale the signal according to the given order and cut-off frequency
+
+            Input:
+
+                sp: (1D array)
+                    the signal to be smoothed
+
+                n:  (int)
+                    the filter order
+
+                fc: (float)
+                    the filter cut-off
+
+                fs: (float)
+                    the sampling frequency
+
+            Output:
+                z:  (1D array)
+                    the scaled and filtered signal
+            """
+
+            # get the filtered and scaled signal
+            return self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=n, sampling_frequency=fs, plot=False))
+
+
         ########    SETUP    ########
 
 
@@ -694,8 +720,7 @@ class RunningAnalysis():
                 sp = speed.values.flatten()[ix_buf]
 
                 # to speed-up the search calculate also a scaled and filtered copy of the speed signal
-                sf = self.__scale__(pr.butt_filt(sp, cutoffs=self.fc, order=self.n,
-                                                 sampling_frequency=speed.sampling_frequency, plot=False))
+                sf = __smooth__(sp, n=self.n, fc=self.fc, fs=speed.sampling_frequency)
 
                 # ensure the signal starts from a toe-off
                 if len(self.steps) == 0:
