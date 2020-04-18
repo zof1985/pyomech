@@ -255,6 +255,8 @@ class RunningAnalysis():
             self.tw = None
             self.n = None
             self.fc = None
+            self.fs = None
+            self.th = None
 
         # add the new source
         self.source = source
@@ -262,7 +264,7 @@ class RunningAnalysis():
 
 
     def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None, meta_left=None,
-                     toe_left=None, tw=None, fc=10, n=4):
+                     toe_left=None):
         """
         method extracting the gait events from kinematic data of the feet and the resultant force coming from a
         force platform.
@@ -296,10 +298,11 @@ class RunningAnalysis():
         
 
         # store the additional parameters
-        self.tw = tw
-        self.fc = fc
-        self.n = n
-        
+        self.tw = None
+        self.fc = None
+        self.n = None
+        self.th = None
+        self.fs = force.sampling_frequency
         """
 
         ########    FOOT-STRIKES    ########
@@ -441,7 +444,7 @@ class RunningAnalysis():
         pks_dv = pr.find_peaks(self.__scale__(d1['Y'].values.flatten()), height=0.66, plot=False)
 
         # get the force vertical crossings at the 5% of the force peak
-        crs_fv = pr.crossings(force['Y'].values.flatten(), np.max(force['Y'].values.flatten()) * 0.05, plot=False)
+        crs_fv = pr.crossings(self.__scale__(force['Y'].values.flatten()), 0.05, plot=False)
 
         # get the closer crossing point to each peak
         fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_dv])
@@ -470,30 +473,21 @@ class RunningAnalysis():
         
 
 
-    def __from_blackbox__(self, blackbox, tw=None, fc=None, n=None):
+    def __from_blackbox__(self, blackbox):
         """
         method extracting the gait events from blackbox data.
 
         Input:
             blackbox:   (Vector)
                         the vector containing the blackbox data to be used for the analysis.
-
-                        
-            tw:     (float)
-                    not used. Parameter left only for compatibility with the other methods.
-
-
-            fc:     (float)
-                    not used. Parameter left only for compatibility with the other methods.
-
-            n:      (int)
-                    not used. Parameter left only for compatibility with the other methods.
         """
 
         # add the parameters
-        self.tw = tw
-        self.fc = fc
-        self.n = n
+        self.tw = None
+        self.fc = None
+        self.n = None
+        self.th = None
+        self.fs = None
 
         # get the foot-strikes
         fs_loc = np.append([0], np.diff(blackbox['stato_w'].values.flatten())) == 1
@@ -512,7 +506,7 @@ class RunningAnalysis():
   
 
         
-    def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2):
+    def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2, th=0.8):
         """
         method extracting the gait events from treadmill data using a new approach.
 
@@ -528,45 +522,14 @@ class RunningAnalysis():
 
             n:      (int)
                     the order of the phase-corrected Butterworth low-pass filter.
+
+            th:     (float)
+                    a scalar representing the amplitude threshold for the detection of the toe-offs (it reflects a
+                    percentage of the signal amplitude).
         """
 
 
         ########    GAIT EVENTS DETECTING METHODS    ########
-
-        '''
-        def get_fs(sp):
-            """
-            iteratively smooth the signal with higher filter cut-off and search for a peak in its first derivative
-            until a peak is found before reaching a local minima in speed with amplitude lower than its half 
-            
-            Input:
-                sp:     (1D array)
-                        the speed signal
-
-            Output:
-                pk:     (int)
-                        the location of the foot-strike in sample points
-            """
-            
-            fc = min(20, self.fc)
-            while fc <= 20:
-
-                # get the filtered signal
-                spf = self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=self.n,
-                                                  sampling_frequency=speed.sampling_frequency, plot=False))
-
-                # get the last peak in the first derivative of spf before the next mid-stance
-                pks = pr.find_peaks((spf[2:] - spf[:-2])[:get_ms(spf)], plot=False)
-
-                # return the last peak check if pks is not empty
-                if len(pks) > 0: return pks[-1] + 1
-                
-                # otherwise increase the cutoff frequency and repeat
-                else: fc += 1
-
-            # something went wrong. Thus return nan
-            return np.nan
-        '''
 
 
         def __get_fs__(sp):
@@ -583,15 +546,28 @@ class RunningAnalysis():
                         the location of the foot-strike in sample points
             """
             
+            # first check that we have enough samples
+            if len(sp) < 11:
+                return np.nan
+
+            # initialize the searching cut-off frequency
             fc = min(20, self.fc)
+
+            # start the iterative search of the foot-strike
             while fc <= 20:
 
                 # get the filtered signal
-                spf = __smooth__(sp, n=self.n, fc=fc, fs=speed.sampling_frequency)
+                spf = pr.butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+
+                # try to get the next mid-stance
+                ms = __get_ms__(spf)
+
+                # return NaN if ms is not found
+                if np.isnan(ms): return np.nan
 
                 # find the peaks in the first derivative within the next mid-stance
-                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(__get_ms__(spf) - 1)], plot=False)
-
+                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(ms - 1)], plot=False)
+                
                 # return the last peak if pks is not empty
                 if len(pks) > 0: return pks[-1] + 1
                 
@@ -614,20 +590,19 @@ class RunningAnalysis():
                 mn:     (int)
                         the location of the mid-stance in sample points
             """
+            try:
+                # find the first flexion point (either a local maxima or minima)
+                pk = np.sort(np.append(pr.find_peaks(sp, plot=False), pr.find_peaks(-sp, plot=False)))[0]
+
+                # get the first point in the signal below th and after pk
+                st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
             
-            # get the first minima lower than 0.4
-            # return pr.find_peaks(-sp, -0.4, plot=False)[0]
-
-            # find the first flexion point (either a local maxima or minima)
-            pk = pr.find_peaks(abs(sp), plot=False)[0]
-
-            # get the first point in the signal below 0.8 and after pk
-            start = np.argwhere(sp[pk:] < 0.8).flatten()[0] + pk
+            except Exception:
+                return np.nan
 
             # get the next toe-off or the last point in the sp if to is not found
-            end = __get_to__(sp[start:])
-            if np.isnan(end):
-                end = len(sp) - 1 + start
+            end = __get_to__(sp[st:])
+            end = (end + st) if not np.isnan(end) else (len(sp) - 1)
 
             # get the minimum value in sp within end
             mn = np.argmin(sp[:end])
@@ -649,45 +624,23 @@ class RunningAnalysis():
                 pk:     (int)
                         the location of the toe-off in sample points
             """
-                        
-            # get the first peak higher than 0.8 in the filtered speed
-            return pr.find_peaks(sp, 0.8, plot=False)[0]
+            
+            # get the peaks with amplitude above th
+            pks = pr.find_peaks(self.__scale__(sp), self.th, plot=False)
 
-
-        def __smooth__(sp, n=None, fc=None, fs=None):
-            """
-            low-pass filter and scale the signal according to the given order and cut-off frequency
-
-            Input:
-
-                sp: (1D array)
-                    the signal to be smoothed
-
-                n:  (int)
-                    the filter order
-
-                fc: (float)
-                    the filter cut-off
-
-                fs: (float)
-                    the sampling frequency
-
-            Output:
-                z:  (1D array)
-                    the scaled and filtered signal
-            """
-
-            # get the filtered and scaled signal
-            return self.__scale__(pr.butt_filt(sp, cutoffs=fc, order=n, sampling_frequency=fs, plot=False))
+            # return the first peak or NaN
+            return pks[0] if len(pks) > 0 else np.nan
 
 
         ########    SETUP    ########
 
 
         # store the data
-        self.tw = tw
-        self.n = n
-        self.fc = fc
+        self.tw = tw                        # time-window
+        self.n = n                          # filter order
+        self.fc = fc                        # filter cut-off frequency
+        self.th = th                        # amplitude threshold (this is used to detect mid-stances and toe-offs)
+        self.fs = speed.sampling_frequency  # the frequency of the signal
 
         # initialize the steps output
         self.steps = []
@@ -711,7 +664,7 @@ class RunningAnalysis():
             # check if the algorithm must run
             if len(ix_buf) < 11:
                 proceed = False
-            elif len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing:
+            if proceed and (len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing):
 
                 # get the data in the buffer and filter the speed data
                 tm = time[ix_buf]
@@ -720,58 +673,48 @@ class RunningAnalysis():
                 sp = speed.values.flatten()[ix_buf]
 
                 # to speed-up the search calculate also a scaled and filtered copy of the speed signal
-                sf = __smooth__(sp, n=self.n, fc=self.fc, fs=speed.sampling_frequency)
-
+                sf = pr.butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+                
                 # ensure the signal starts from a toe-off
                 if len(self.steps) == 0:
-                    t0 = __get_to__(sf)          # here the filtered signal is passed to "get_to"
+                    t0 = __get_to__(sf)
                     tm = tm[t0:]
                     sp = sp[t0:]
                     sf = sf[t0:]
 
                     # get the first "foot-strike"
-                    try:
-                        fs0 = tm[__get_fs__(sp)]  # here the unfiltered signal is passed to "get_fs"
-                    except Exception:
-                        fs0 = np.nan
-
+                    fs_ix = __get_fs__(sp)
+                    fs = np.nan if np.isnan(fs_ix) else tm[fs_ix]
+                    
                 # get the foot-strike as the last landing
                 else:
-                    fs0 = self.steps[-1].landing
+                    fs = self.steps[-1].landing
+                    fs_ix = 0
 
                 # find the mid-stance
-                if not np.isnan(fs0):
-                    try:
-                        ix = np.argwhere(tm > fs0).flatten()
-                        ms = tm[ix][__get_ms__(sf[ix])]   # here the filtered signal is passed to "get_ms"
-                    except Exception:
-                        ms = np.nan
+                if not np.isnan(fs):
+                    ms_ix = __get_ms__(sf[fs_ix:]) + fs_ix
+                    ms = np.nan if np.isnan(ms_ix) else tm[ms_ix]
                 else:
                     ms = np.nan
                 
                 # fing the toe-off
                 if not np.isnan(ms):
-                    try:
-                        ix = np.argwhere(tm > ms).flatten()
-                        to = tm[ix][__get_to__(sf[ix])]  # here the filtered signal is passed to "get_to"
-                    except Exception:
-                        to = np.nan
+                    to_ix = __get_to__(sf[ms_ix:]) + ms_ix
+                    to = np.nan if np.isnan(to_ix) else tm[to_ix]
                 else:
                     to = np.nan
                                 
                 # find the landing
                 if not np.isnan(to):
-                    try:
-                        ix = np.argwhere(tm > to).flatten()
-                        fs1 = tm[ix][__get_fs__(sp[ix])]   # again we pass the unfiltered signal to "get_fs"
-                    except Exception:
-                        fs1 = np.nan
+                    ln_ix = __get_fs__(sp[to_ix:]) + to_ix
+                    ln = np.nan if np.isnan(ln_ix) else tm[ln_ix]
                 else:
-                    fs1 = np.nan
+                    ln = np.nan
                 
                 # add the new step
-                if not np.any([np.isnan(i) for i in [fs0, ms, to, fs1]]):
-                    self.steps += [Step(fs0, ms, to, fs1)]
+                if not np.any([np.isnan(i) for i in [fs, ms, to, ln]]):
+                    self.steps += [Step(fs, ms, to, ln)]
                 else:
                     proceed = False
     
@@ -993,6 +936,8 @@ class RunningAnalysis():
         self.tw = tw                                                       # time-window (s)
         self.n = n                                                         # the filter order
         self.fc = fc                                                       # the filter cut-off frequency (hz)
+        self.fs = speed.sampling_frequency                                 # sampling frequency
+        self.th = None
 
         # initialize the steps output
         self.steps = []
@@ -1246,7 +1191,9 @@ class RunningAnalysis():
         txt += "{:25s}".format("Source:") + self.source + "\n"
         txt += "{:25s}".format("Time window (s):") + (str(self.tw) if self.tw is not None else "") + "\n"
         txt += "{:25s}".format("Filter order:") + (str(self.n) if self.n is not None else "") + "\n"
-        txt += "{:25s}".format("Filter cut-off (Hz):") + (str(self.fc) if self.fc is not None else "")
+        txt += "{:25s}".format("Filter cut-off (Hz):") + (str(self.fc) if self.fc is not None else "") + "\n"
+        txt += "{:25s}".format("Amplitude threshold:") + (str(self.th) if self.th is not None else "") + "\n"
+        txt += "{:25s}".format("Sampling frequency (Hz):") + (str(self.fs) if self.fs is not None else "")
         return txt
 
 
@@ -1288,6 +1235,8 @@ class RunningAnalysis():
         new.tw = self.tw
         new.n = self.n
         new.fc = self.fc
+        new.th = self.th
+        new.fs = self.fs
         return new
 
 
@@ -1328,7 +1277,8 @@ class RunningAnalysis():
         os.makedirs(pu.lvlup(file), exist_ok=True)
 
         # store the parameters
-        params = pd.DataFrame({'source': self.source, 'tw': self.tw, 'n': self.n, 'fc': self.fc}, index=[0])
+        params = pd.DataFrame({'source': self.source, 'tw': self.tw, 'n': self.n, 'fc': self.fc, 'fs': self.fs,
+                               'th': self.th}, index=[0])
         pu.to_excel(file, params, '__params__')
         
         # store the steps
