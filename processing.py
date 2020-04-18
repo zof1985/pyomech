@@ -25,7 +25,7 @@ fig_size = 300  # pixels
 
 
 
-def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=True):
+def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=False):
     """
     apply a moving average filter with the given order to y. The only padding style currently supported is "mirror"
     which specularly extends the signal at each end to the required amount of samples necessary to preserve the signal
@@ -128,7 +128,7 @@ def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=True):
 
 
 
-def cubic_spline_interpolation(y, x_old=None, x_new=None, n=None, plot=True, **kwargs):
+def cubic_spline_interpolation(y, x_old=None, x_new=None, n=None, plot=False, **kwargs):
     """
     Get the cubic spline interpolation of y.
 
@@ -209,7 +209,7 @@ def cubic_spline_interpolation(y, x_old=None, x_new=None, n=None, plot=True, **k
 
 
 def winter_residuals(x, fs, f_num=1000, f_max=None, segments=2, min_samples=2, filt_fun=None, filt_opt=None,
-                     plot=True):
+                     plot=False):
     """
     Perform Winter's residual analysis of the entered data.
 
@@ -320,7 +320,7 @@ def winter_residuals(x, fs, f_num=1000, f_max=None, segments=2, min_samples=2, f
 
 
 
-def crossovers(y, x=None, n_segments=2, min_samples=5, plot=True):
+def crossovers(y, x=None, n_segments=2, min_samples=5, plot=False):
     """
     Detect the position of the crossing over points between K regression lines used to best fit the data.
 
@@ -438,7 +438,7 @@ def crossovers(y, x=None, n_segments=2, min_samples=5, plot=True):
 
 
 
-def butt_filt(y, cutoffs, sampling_frequency, order=4, type='lowpass', phase_corrected=True, plot=True):
+def butt_filt(y, cutoffs, sampling_frequency, order=4, type='lowpass', phase_corrected=True, plot=False):
     """
     Provides a convenient function to call a Butterworth filter with the specified parameters.
 
@@ -555,7 +555,7 @@ def butt_filt(y, cutoffs, sampling_frequency, order=4, type='lowpass', phase_cor
 
 
 
-def psd(y, sampling_frequency=1, n=None, plot=True):
+def psd(y, sampling_frequency=1, n=None, plot=False):
     """
     compute the power spectrum of y using fft
 
@@ -642,7 +642,7 @@ def psd(y, sampling_frequency=1, n=None, plot=True):
 
 
 
-def find_peaks(y, height=None, plot=True):
+def find_peaks(y, height=None, plot=False):
     """
     detect the location (in sample units) of the peaks within y.
         
@@ -729,7 +729,7 @@ def nextpow(n, b):
 
 
 
-def crossings(y, value=0., x=None, interpolate=False, plot=True):
+def crossings(y, value=0., x=None, interpolate=False, plot=False):
     """
     Dectect the crossing points in x compared to value.
 

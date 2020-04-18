@@ -505,7 +505,7 @@ class RunningAnalysis():
         self.__add_steps__(fs, ms, to)
   
 
-        
+    '''  
     def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2, th=0.8):
         """
         method extracting the gait events from treadmill data using a new approach.
@@ -717,7 +717,225 @@ class RunningAnalysis():
                     self.steps += [Step(fs, ms, to, ln)]
                 else:
                     proceed = False
-    
+    '''
+
+
+        
+    def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2, th=0.8):
+        """
+        method extracting the gait events from treadmill data using a new approach.
+
+        Input:
+            speed:  (Vector)
+                    the vector containing the treadmill speed data to be used for the analysis.
+
+            tw:     (float)
+                    the time-window (in seconds) used to search for the next step
+
+            fc:     (float)
+                    the cut-off frequency used to low-pass filter the data via a phase-corrected Butterworth filter.
+
+            n:      (int)
+                    the order of the phase-corrected Butterworth low-pass filter.
+
+            th:     (float)
+                    a scalar representing the amplitude threshold for the detection of the toe-offs (it reflects a
+                    percentage of the signal amplitude).
+        """
+
+
+        ########    GAIT EVENTS DETECTING METHODS    ########
+
+
+        def __get_fs__(sp):
+            """
+            iteratively smooth the signal with higher filter cut-off and search for a peak in its first derivative
+            until a peak is found before reaching a local minima in speed with amplitude lower than its half 
+            
+            Input:
+                sp:     (1D array)
+                        the speed signal
+
+            Output:
+                pk:     (int)
+                        the location of the foot-strike in sample points
+            """
+            
+            # first check that we have enough samples
+            if len(sp) < 11:
+                return np.nan
+
+            # initialize the searching cut-off frequency
+            # fc = min(20, self.fc)
+            n = int((self.fs * 0.05 // 2) * 2 + 1)
+
+            # start the iterative search of the foot-strike
+            while fc <= 20:
+
+                # get the filtered signal
+                spf = pr.moving_average_filter(sp, n=n)
+
+                # try to get the next mid-stance
+                ms = __get_ms__(spf)
+
+                # return NaN if ms is not found
+                if np.isnan(ms): return np.nan
+
+                # find the peaks in the first derivative within the next mid-stance
+                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(ms - 1)], plot=False)
+                
+                # return the last peak if pks is not empty
+                if len(pks) > 0: return pks[-1] + 1
+                
+                # otherwise increase the cutoff frequency and repeat
+                else: n -= 2
+
+            # something went wrong. Thus return nan
+            return np.nan
+
+
+        def __get_ms__(sp):
+            """
+            get the minima in the speed signal 
+            
+            Input:
+                sp:     (1D array)
+                        the filtered speed signal
+
+            Output:
+                mn:     (int)
+                        the location of the mid-stance in sample points
+            """
+            try:
+                # find the first flexion point (either a local maxima or minima)
+                pk = np.sort(np.append(pr.find_peaks(sp, plot=False), pr.find_peaks(-sp, plot=False)))[0]
+
+                # get the first point in the signal below th and after pk
+                st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
+            
+            except Exception:
+                return np.nan
+
+            # get the next toe-off or the last point in the sp if to is not found
+            end = __get_to__(sp[st:])
+            end = (end + st) if not np.isnan(end) else (len(sp) - 1)
+
+            # get the minimum value in sp within end
+            mn = np.argmin(sp[:end])
+            
+            # if mn corresponds to end return nan (the identification of the minima in the signal is not reliable)
+            # otherwise return mn
+            return np.nan if mn == end else mn
+        
+        
+        def __get_to__(sp):
+            """
+            get the first peak in the filtered signal having amplitude above the 80% of the overall signal amplitude 
+            
+            Input:
+                sp:     (1D array)
+                        the (filtered) speed signal
+
+            Output:
+                pk:     (int)
+                        the location of the toe-off in sample points
+            """
+            
+            # get the peaks with amplitude above th
+            pks = pr.find_peaks(self.__scale__(sp), self.th, plot=False)
+
+            # return the first peak or NaN
+            return pks[0] if len(pks) > 0 else np.nan
+
+
+        ########    SETUP    ########
+
+
+        # store the data
+        self.tw = tw                        # time-window
+        self.n = n                          # filter order
+        self.fc = fc                        # filter cut-off frequency
+        self.th = th                        # amplitude threshold (this is used to detect mid-stances and toe-offs)
+        self.fs = speed.sampling_frequency  # the frequency of the signal
+
+        # initialize the steps output
+        self.steps = []
+
+        # get the time signal
+        time = speed.index.to_numpy()
+
+        # get the starting buffer index
+        ix_buf = np.argwhere((time >= 0) & (time <= self.tw)).flatten().tolist()
+        
+        
+        ########    START THE SIMULATION    ########
+
+
+        proceed = True
+        while proceed:
+
+            # update the buffer index
+            ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
+
+            # check if the algorithm must run
+            if len(ix_buf) < 11:
+                proceed = False
+            if proceed and (len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing):
+
+                # get the data in the buffer and filter the speed data
+                tm = time[ix_buf]
+
+                # get the speed signal within the current buffer
+                sp = speed.values.flatten()[ix_buf]
+
+                # to speed-up the search calculate also a scaled and filtered copy of the speed signal
+                # sf = pr.butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+                n = int((self.fs * 0.05 // 2) * 2 + 1)
+                sf = pr.moving_average_filter(sp, n)
+
+                # ensure the signal starts from a toe-off
+                if len(self.steps) == 0:
+                    t0 = __get_to__(sf)
+                    tm = tm[t0:]
+                    sp = sp[t0:]
+                    sf = sf[t0:]
+
+                    # get the first "foot-strike"
+                    fs_ix = __get_fs__(sp)
+                    fs = np.nan if np.isnan(fs_ix) else tm[fs_ix]
+                    
+                # get the foot-strike as the last landing
+                else:
+                    fs = self.steps[-1].landing
+                    fs_ix = 0
+
+                # find the mid-stance
+                if not np.isnan(fs):
+                    ms_ix = __get_ms__(sf[fs_ix:]) + fs_ix
+                    ms = np.nan if np.isnan(ms_ix) else tm[ms_ix]
+                else:
+                    ms = np.nan
+                
+                # fing the toe-off
+                if not np.isnan(ms):
+                    to_ix = __get_to__(sf[ms_ix:]) + ms_ix
+                    to = np.nan if np.isnan(to_ix) else tm[to_ix]
+                else:
+                    to = np.nan
+                                
+                # find the landing
+                if not np.isnan(to):
+                    ln_ix = __get_fs__(sp[to_ix:]) + to_ix
+                    ln = np.nan if np.isnan(ln_ix) else tm[ln_ix]
+                else:
+                    ln = np.nan
+                
+                # add the new step
+                if not np.any([np.isnan(i) for i in [fs, ms, to, ln]]):
+                    self.steps += [Step(fs, ms, to, ln)]
+                else:
+                    proceed = False
+
 
 
     def __from_treadmill_old__(self, speed, tw=2, fc=20, n=2):
