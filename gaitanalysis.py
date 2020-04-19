@@ -444,7 +444,7 @@ class RunningAnalysis():
         pks_dv = pr.find_peaks(self.__scale__(d1['Y'].values.flatten()), height=0.66, plot=False)
 
         # get the force vertical crossings at the 5% of the force peak
-        crs_fv = pr.crossings(self.__scale__(force['Y'].values.flatten()), 0.05, plot=False)
+        crs_fv = pr.crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)
 
         # get the closer crossing point to each peak
         fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_dv])
@@ -878,7 +878,7 @@ class RunningAnalysis():
             ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
 
             # check if the algorithm must run
-            if len(ix_buf) < 11:
+            if len(ix_buf) < self.fs * 0.5:
                 proceed = False
             if proceed and (len(self.steps) == 0 or time[ix_buf[0]] >= self.steps[-1].landing):
 
