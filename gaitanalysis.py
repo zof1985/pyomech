@@ -236,9 +236,9 @@ class RunningAnalysis():
         # treadmill data was provided
         if "speed" in np.array([i for i in kwargs.keys()]):
             if new_approach:
-                self.__from_treadmill_new__(**kwargs)
+                self.__from_treadmill_new2__(**kwargs)
             else:
-                self.__from_treadmill_old__(**kwargs)
+                self.__from_treadmill_new1__(**kwargs)
         
         # force data was provided
         elif "force" in np.array([i for i in kwargs.keys()]):
@@ -506,9 +506,9 @@ class RunningAnalysis():
   
 
      
-    def __from_treadmill_new__(self, speed, tw=2, fc=10, n=2, th=0.8):
+    def __from_treadmill_new2__(self, speed, tw=2, fc=10, n=2, th=0.8):
         """
-        method extracting the gait events from treadmill data using a new approach.
+        method extracting the gait events from treadmill data using the new2 approach.
 
         Input:
             speed:  (Vector)
@@ -720,9 +720,9 @@ class RunningAnalysis():
     
 
 
-    def __from_treadmill_old__(self, speed, tw=2, fc=20, n=2):
+    def __from_treadmill_new1__(self, speed, tw=2, fc=20, n=2):
         """
-        method extracting the gait events from treadmill data using the old approach.
+        method extracting the gait events from treadmill data using the new1 approach.
 
         Input:
             speed:  (Vector)
