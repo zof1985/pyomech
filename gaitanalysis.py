@@ -800,7 +800,7 @@ class RunningAnalysis():
             return [i for i in c if len(i) > 0]
 
 
-        def get_fs(time, position, speed, acceleration):
+        def __get_fs__(time, position, speed, acceleration):
             """
             This method serves the purpose of extracting the first foot-strike.
 
@@ -854,7 +854,7 @@ class RunningAnalysis():
             return time[spe_pk if len(acc_mns) == 0 else acc_mns[-1][-1]]
 
 
-        def get_ms(time, position, speed, acceleration):
+        def __get_ms__(time, position, speed, acceleration):
             """
             This method serves the purpose of extracting the first mid-stance.
 
@@ -893,7 +893,7 @@ class RunningAnalysis():
             return None if len(spe_mns) == 0 else time[spe_mns[-1][np.argmin(speed[spe_mns[-1]])]]
     
 
-        def get_to(time, position, speed, acceleration):
+        def __get_to__(time, position, speed, acceleration):
             """
             This method serves the purpose of extracting the first toe-off.
 
@@ -989,28 +989,28 @@ class RunningAnalysis():
                     ac_buf = ac_buf[t0:]
 
                     # get the foot-strike
-                    fs0 = get_fs(tm_buf, ps_buf, sp_buf, ac_buf)
+                    fs0 = __get_fs__(tm_buf, ps_buf, sp_buf, ac_buf)
                 else:
                     fs0 = self.steps[-1].landing
 
                 # apply __ms__
                 if fs0 is not None:
                     ix = np.argwhere(tm_buf > fs0).flatten()
-                    ms = get_ms(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                    ms = __get_ms__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
                 else:
                     ms = None
 
                 # apply __to__
                 if ms is not None:
                     ix = np.argwhere(tm_buf > ms).flatten()
-                    to = get_to(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                    to = __get_to__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
                 else:
                      to = None
                 
                 # apply __fs__ again
                 if to is not None:
                     ix = np.argwhere(tm_buf > to).flatten()
-                    fs1 = get_fs(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
+                    fs1 = __get_fs__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
                 else:
                     fs1 = None
                 
