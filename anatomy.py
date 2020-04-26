@@ -1,8 +1,8 @@
 # generic imports
 
 import numpy as np
-import pyomech.utils as ut
-import pyomech.vectors as dt
+import utils as ut
+import vectors as dt
 from itertools import combinations
 from scipy.spatial.transform import Rotation
 from pandas import DataFrame, MultiIndex, IndexSlice

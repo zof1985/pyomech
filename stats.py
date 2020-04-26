@@ -12,7 +12,7 @@ import joblib as jl
 import itertools as it
 import scipy.stats as ss
 import warnings
-import pyomech.utils as pu
+import utils as pu
 
 
 
@@ -25,6 +25,28 @@ eps = np.finfo(float).eps   #smallest float, used to avoid divide-by-zero errors
 
 
 ########    METHODS    ########
+
+
+
+def IQR(x, axis=0):
+    """
+    get the interquartile range of x, that is:
+                
+            IQR = 75 percentile - 25 percentile
+
+    Input:
+        x:      (ndarray)
+                a numpy ndarray
+
+        axis:   (int)
+                the axis of x to be used for IQR calculation.
+
+    Ouput:
+        iqr:    (ndarray)
+                a 1D array with the IQR of all the dimensions in x accoding to axis.
+    """
+    
+    return np.array(np.quantile(x, 0.75, axis=axis) - np.quantile(x, 0.25, axis=axis)).flatten()
 
 
 
