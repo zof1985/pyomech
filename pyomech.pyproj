@@ -25,10 +25,10 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="gaitanalysis.py" />
-    <Compile Include="entropy.py">
+    <Compile Include="information.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="statecontrol.py">
+    <Compile Include="control.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="plot.py" />

@@ -5,6 +5,7 @@
 
 
 
+import stats as ps
 import numpy as np
 import pandas as pd
 import itertools as it
@@ -22,6 +23,55 @@ fig_size = 300  # pixels
 
 
 # METHODS
+
+
+
+def digitize(x, rule="fd"):
+    """
+    return a digitized version of x where each value is linked to a bin (i.e an int value) according to a specific
+    rule.
+
+    Input:
+        x:      (nD array)
+                a ndarray that has to be digitized.
+
+        rule:   (str)
+                the method to be used for digitizing x.
+                Currently, only the Freedmain-Diaconis rule (fd) is implemented, which stratify the x amplitude into
+                intervals having width:
+                                                         IQR(x)
+                                        width = 2 * ---------------
+                                                    len(x) ** (1/3)
+
+    Output:
+        
+        d:      (ndarray)
+                an array with the same shape of x but of dtype "int" where each element denotes the digitized amplitude
+                of the corresponding value in x.
+
+    References:
+        Freedman D, Diaconis P. (1981) On the histogram as a density estimator:L 2 theory.
+            Z. Wahrscheinlichkeitstheorie verw Gebiete 57: 453–476. doi: 10.1007/BF01025868
+    """
+
+    # scale x
+    z = (x - np.min(x)) / (np.max(x) - np.min(x))
+
+    # get the width
+    if rule == "fd":    w = 2 * ps.IQR(z) / (len(z) ** (1 / 3))
+
+    # only "fd" is currently supported
+    else:    raise AttributeError("Only Freedman-Diaconis rule is implemented. Please run again using 'fd' as rule.")
+
+    # get the number of intervals
+    n = int(np.floor(1 / w)) + 1
+
+    # digitize z
+    d = np.zeros(z.shape)
+    for i in (np.arange(n) + 1):
+        d[np.argwhere((x >= (i - 1) * w) & (x < i * w)).flatten()] = i - 1
+    return d
+
 
 
 
@@ -827,45 +877,6 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
 
 
 '''
-
-def power_freq(X, C, fs=1):
-    """
-    get the cumulative signal power corresponding to C.
-
-    Input:
-        X: (ndarray)
-            The signal having 1 dimension.
-        C: (float)
-            the power percentage within the (0, 100] range
-        fs: (float)
-            the sampling frequency in Hz.
-
-    Output:
-        - the frequency (in Hz) corresponding to a cumulative signal power equal to C.
-        - the frequencies tested.
-        - the cumulative power.
-
-    References:
-        Sinclair J, Taylor PJ, Hobbs SJ.
-            Digital filtering of three-dimensional lower extremity kinematics: an assessment.
-            J Hum Kinet. 2013;39(1):25–36.
-    """
-
-    # get the power spectral density of the signal
-    X = X.flatten() - np.mean(X)
-    P, F = psd(X, fs)
-    if np.isclose(np.sum(P), 0):
-        return 0, F, P
-    P = 100 * np.cumsum(P) / np.sum(P)
-    if np.all(X == 0):
-        return F[-2], F, P
-    try:
-        return F[P >= C][0], F, P
-    except Exception:
-        return F[-2], F, P
-
-
-
 def xcorr(X, c_type='unbiased', return_negative=False):
     """
     set the cross correlation of the data in X
