@@ -6,7 +6,6 @@
 
 
 import numpy as np
-import pykalman as km
 import stats as ps
 import processing as pr
 import utils as pu
@@ -18,7 +17,27 @@ import pandas as pd
 
 
 
+def geometric_mean(X, axis=0):
+    """
+    return the geometric mean along the defined axis of the dataset X.
+    
+    Input:
+        X:      (ndarray)
+                a numpy ndarray.
 
+        axis:   (int)
+                the axis along which the geometric mean must be calculated.
+
+    Output:
+        G:      (ndarray)
+                the geometric mean calculated along the provided axis.
+    """
+
+    # get the number of arrays
+    N = X.shape[axis]
+
+    # return the geometric mean
+    return np.prod(X, axis) ** (1 / N)
 
 
 
@@ -60,26 +79,40 @@ class StateSpace(pd.DataFrame):
 
 
     @staticmethod
-    def from_1D(y, x=None, dimensions=None, use_delays=True, delay=None, from_index_unit="", space_unit=""):
+    def from_1D(y, x=None, delays=True, from_index_unit="", space_unit=""):
         """
-        Create a StateSpace with the specified number of dimensions from a 1D array (e.g. a time-series).
+        Create a StateSpace with the specified number of dimensions from a 1D array (e.g. a time-series) using the
+        method of delays.
 
         Input:
             y:          (1D array)
                         the signal to be used for the StateSpace reconstruction.
 
             x:          (1D array or None)
+                        if provided, the array of indices for each sample in y.
 
-            dimensions: (int or None)
-
-            use_delays: (bool)
-
-            delay:      (int or None)
+            delays:     (list, 1D array or None)
+                        a list of integers defining the delay to be applied for each embedding dimension.
+                        If not provided, the Nichkawde 2013 approach is used to optimally reconstruct the StateSpace
+                        from data.
 
             index_unit: (str)
+                        The label defining the unit of measurement of the data provided by the x array.
 
             space_unit: (str)
+                        The label defining the unit of measurement of the data provided by the y array.
+
+        Output:
+            S:          (StateSpace)
+                        The StateSpace object corresponding to the provided data.
+           
+        References:
+            Nichkawde C. (2013) Optimal state-space reconstruction using derivatives on projected manifold.
+                PHYSICAL REVIEW E 87, 022905.
         """
+
+        
+
 
     
 

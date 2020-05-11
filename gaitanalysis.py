@@ -7,9 +7,9 @@
 import os
 import numpy as np
 import pandas as pd
-import processing as pr
-import vectors as pv
-import utils as pu
+import pyomech.processing as pr
+import pyomech.vectors as pv
+import pyomech.utils as pu
 import colorcet as cc
 import scipy.signal as ss
 import scipy.integrate as si

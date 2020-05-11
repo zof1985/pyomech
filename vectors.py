@@ -7,8 +7,8 @@
 
 import numpy as np
 import pandas as pd
-import utils as pu
-import processing as pp
+import pyomech.utils as pu
+import pyomech.processing as pp
 import warnings
 import os
 from sklearn.model_selection import GridSearchCV
