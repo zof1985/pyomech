@@ -234,18 +234,18 @@ class RunningAnalysis():
             pass
 
         # treadmill data was provided
-        if "speed" in np.array([i for i in kwargs.keys()]):
+        if np.any([i == "speed" for i in kwargs.keys()]):
             if new_approach:
                 self.__from_treadmill_new2__(**kwargs)
             else:
                 self.__from_treadmill_new1__(**kwargs)
         
         # force data was provided
-        elif "force" in np.array([i for i in kwargs.keys()]):
+        elif np.any([i == "force" for i in kwargs.keys()]):
             self.__from_lab__(**kwargs)
 
         # blackbox data was provided
-        elif "blackbox" in np.array([i for i in kwargs.keys()]):
+        elif np.any([i == "blackbox" for i in kwargs.keys()]):
             self.__from_blackbox__(**kwargs)
         
         # the provided parameters are unknown thus create an empty object
