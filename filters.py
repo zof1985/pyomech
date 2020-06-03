@@ -76,18 +76,18 @@ class KalmanFilter():
         self.N               = X.shape[0]
 
         # generate the identity matrix
-        self.I = np.eye(N)
+        self.I = np.eye(self.N)
 
         # check X
-        self._assertShape(X, "X", N, 1, False)
+        self.__assertShape(X, "X", self.N, 1, False)
         self.X               = X
 
         # check F
-        self._assertShape(F, "F", N, N)
+        self.__assertShape(F, "F", self.N, self.N)
         self.F               = F
 
         # check P
-        self.__assertShape(P, "P", N, N, False)
+        self.__assertShape(P, "P", self.N, self.N, False)
         self.P               = P
 
         # get the expected L
@@ -96,11 +96,11 @@ class KalmanFilter():
         self.L               = U.shape[0]
 
         # check U
-        self._assertShape(U, "U", L, 1)
+        self.__assertShape(U, "U", self.L, 1)
         self.U               = U
 
         # check B
-        self._assertShape(B, "B", N, L)
+        self.__assertShape(B, "B", self.N, self.L)
         self.B               = B
         
         # get the expected M
@@ -109,19 +109,19 @@ class KalmanFilter():
         self.M               = Z.shape[0]
 
         # check Z
-        self._assertShape(Z, "Z", M, 1)
+        self.__assertShape(Z, "Z", self.M, 1)
         self.Z               = Z
 
         # check H
-        self._assertShape(H, "H", M, N)
+        self.__assertShape(H, "H", self.M, self.N)
         self.H               = H
 
         # check Q
-        self._assertShape(Q, "Q", N, N)
+        self.__assertShape(Q, "Q", self.N, self.N)
         self.Q               = Q
 
         # check R
-        self._assertShape(R, "R", M, M)
+        self.__assertShape(R, "R", self.M, self.M)
         self.R               = R
        
 
@@ -188,7 +188,7 @@ class KalmanFilter():
 
         # check F
         if F is not None:
-            self._assertShape(F, "F", self.N, self.N, False)
+            self.__assertShape(F, "F", self.N, self.N, False)
             self.F               = F
 
         # get the expected L
@@ -199,12 +199,12 @@ class KalmanFilter():
 
         # check U
         if U is not None:
-            self._assertShape(U, "U", K, 1, False)
+            self.__assertShape(U, "U", self.L, 1, False)
             self.U               = U
 
         # check B
         if B is not None:
-            self._assertShape(B, "B", N, K, False)
+            self.__assertShape(B, "B", self.N, self.L, False)
             self.B               = B
         
         # get the expected M
@@ -213,22 +213,22 @@ class KalmanFilter():
         self.M                   = Z.shape[0]
 
         # check Z
-        self._assertShape(Z, "Z", M, 1, False)
+        self.__assertShape(Z, "Z", self.M, 1, False)
         self.Z                   = Z
 
         # check H
         if H is not None:
-            self._assertShape(H, "H", M, N, False)
+            self.__assertShape(H, "H", self.M, self.N, False)
             self.H               = H
 
         # check Q
         if Q is not None:
-            self._assertShape(Q, "Q", N, N, False)
+            self.__assertShape(Q, "Q", self.N, self.N, False)
             self.Q               = Q
 
         # check R
         if R is not None:
-            self._assertShape(R, "R", M, M, False)
+            self.__assertShape(R, "R", self.M, self.M, False)
             self.R               = R
 
         
@@ -237,7 +237,7 @@ class KalmanFilter():
 
         # 1. X_est = F * X + B * u
         #    Here a wild guess of the state corresponding to the next time step is provided.
-        self.X = self.F.dot(self.X) + self.B.dot(self.u) 
+        self.X = self.F.dot(self.X) + self.B.dot(self.U) 
         
         # 2. P_est = F * P * F' + Q
         #    This step calculates the covariance matrix corresponding to the estimated new state.
@@ -267,3 +267,30 @@ class KalmanFilter():
     
         # 5. return the new (filtered) state in the measurement space
         return self.H.dot(self.X)
+
+
+    def __assertShape(self, what, name, rows, cols, none=True):
+        """
+        check whether the size of the provided variable is consistent with the expectations.
+
+        Input:
+            what:   (Object)
+                    any variable
+            
+            name:   (str)
+                    the name of the variable
+            
+            rows:   (int)
+                    the number of expected rows
+            
+            cols:   (int)
+                    the number of expected cols
+            
+            none:   (bool)
+                    True means that "what" can be None. False, otherwise
+        """
+        if what is not None:
+            txt = name + "{} must be a {}x{} array".format(name, rows, cols)
+            assert what.shape[0] == rows and what.shape[1] == cols, txt
+        else:
+            assert none, "{} cannot be None".format(name)
