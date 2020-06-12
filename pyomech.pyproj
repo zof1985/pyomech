@@ -5,12 +5,12 @@
     <ProjectGuid>0b421b55-1f14-4940-8b09-62bc91b5f18f</ProjectGuid>
     <ProjectHome>.</ProjectHome>
     <StartupFile>__init__.py</StartupFile>
-    <SearchPath>
-    </SearchPath>
+    <SearchPath>..\..\Python_lib</SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>pyomech</Name>
     <RootNamespace>pyomech</RootNamespace>
+    <InterpreterId>CondaEnv|CondaEnv|pythonenv</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -41,6 +41,9 @@
     <Compile Include="utils.py" />
     <Compile Include="vectors.py" />
     <Compile Include="__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="CondaEnv|CondaEnv|pythonenv" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

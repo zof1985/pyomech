@@ -174,7 +174,7 @@ class LinearRegression():
         """
 
         # this figure can be generated only if x has 1 dimension
-        if self.x.shape[1] > 1:
+        if self.x.ndim > 1:
             raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
 
         # create the figure
@@ -185,7 +185,7 @@ class LinearRegression():
                   marker="circle", fill_alpha=0.5, line_alpha=0.5)
                 
         # decorate the figure
-        self.plot_layout__(p)
+        self.__plot_layout__(p)
 
         # return the figure
         return p
@@ -330,3 +330,194 @@ class PolynomialRegression(LinearRegression):
         Get the Root Mean Squared Error
         """
         return np.sqrt(np.mean((self.y - self.predict(self.x)) ** 2))
+
+
+
+class PowerRegression():
+
+
+    def __init__(self, y, x, digits=5, fit_intercept=True):
+        """
+        Perform the power regression of y given x according to Y = alpha * x ^^ beta + gamma
+        Please note that here 
+
+        Input:
+            y:              (1D array)
+                            the array containing the dependent variable.
+
+            x:              (1D array)
+                            the array containing the indipendent variable.
+
+            digits:         (int)
+                            the number of digits available for each coefficient.
+
+            fit_intercept:  (bool)
+                            should the intercept (i.e. offset) be included in the model?
+        """ 
+
+        # store the entered parameters
+        self.y = np.array([y]).flatten()
+        self.x = np.array([x]).flatten()
+        self.fit_intercept = fit_intercept
+        self.digits = digits
+
+        # correct the shape of y and x
+        Y = np.atleast_2d(np.log(y))
+
+        # handle the intercept
+        if self.fit_intercept:
+            self.gamma = np.round(np.min(self.y))
+            Y = Y - self.gamma
+        else:
+            self.gamma = 0
+
+        if Y.shape[1] != 1 or Y.ndim < 2:
+            Y = Y.T
+        X = np.atleast_2d(np.log(x))
+        if X.shape[0] != Y.shape[0] and X.shape[1] == Y.shape[0]:
+            X = X.T
+
+        # add the intercept to the linearized model
+        X = np.hstack([np.ones(Y.shape), X])
+        
+        # get the coefficients
+        coefs = np.linalg.inv(X.T.dot(X)).dot(X.T).dot(Y)
+        
+        # get the coefficients
+        self.beta = np.round(coefs[1][0], digits)
+        self.alpha = np.round(np.e ** coefs[0][0], digits)
+
+
+
+    def copy(self):
+        """
+        copy the current instance
+        """
+        return PowerRegression(self.y, self.x, self.digits)
+
+
+
+    def predict(self, x):
+        """
+        predict use the fitted model to predict regression output according to the model y = alpha * x ** beta.
+        """
+        return self.alpha * (x ** self.beta) + self.gamma
+
+
+
+    def __repr__(self):
+        return self.__str__(self)
+
+
+
+    def __str__(self):
+        return "Y = {} X ^ {}".format(self.alpha, self.beta)
+
+
+
+    @property
+    def R2(self):
+        """
+        calculate the R-squared of the fitted model.
+        """
+        return np.corrcoef(self.y, self.predict(self.x))[0, 1] ** 2
+
+
+
+    @property
+    def R2_adjusted(self):
+        """
+        calculate the Adjusted R-squared of the fitted model.
+        """
+        return 1 - (1 - self.R2) * (len(self.y) - 1) / (len(self.y) - self.order - 1)
+
+
+
+    @property
+    def RMSE(self):
+        """
+        Get the Root Mean Squared Error
+        """
+        return np.sqrt(np.mean((self.y - self.predict(self.x)) ** 2))
+
+
+
+    def plot_data(self):
+        """
+        return a bokeh figure representing the data and the regression line.
+        """
+
+        # this figure can be generated only if x has 1 dimension
+        if self.x.ndim > 1:
+            raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
+
+        # create the figure
+        p = figure(width=fig_size, height=fig_size, title="Model fit")
+
+        # print the data
+        p.scatter(self.x.flatten(), self.y.flatten(), size=2, fill_color="navy", line_color="navy",
+                  marker="circle", fill_alpha=0.5, line_alpha=0.5)
+        
+        # print the fitting line
+        q = np.unique(self.x.flatten())
+        z = self.predict(q)
+        p.scatter(q, z, size=6, fill_color="darkred", line_color="darkred", marker="circle", fill_alpha=0.5,
+                  line_alpha=0.5)
+        p.line(q, z, line_color="darkred", line_dash="dashed", line_alpha=0.5, line_width=2)
+
+        # decorate the figure
+        self.__plot_layout__(p)
+
+        # return the figure
+        return p
+
+
+
+    def plot_fit(self):
+        """
+        return a bokeh figure representing the regression fit of the model.
+        """
+
+        # this figure can be generated only if x has 1 dimension
+        if self.x.ndim > 1:
+            raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
+
+        # create the figure
+        p = figure(width=fig_size, height=fig_size, title="Model fit")
+
+        # print the data
+        p.scatter(self.x.flatten(), self.y.flatten(), size=2, fill_color="navy", line_color="navy",
+                  marker="circle", fill_alpha=0.5, line_alpha=0.5)
+                
+        # decorate the figure
+        self.__plot_layout__(p)
+
+        # return the figure
+        return p
+
+
+
+    def __plot_layout__(self, figure):
+        """
+        internal function used by plot_data and plot_fit to decorate the figure before returning it.
+        """
+
+        '''
+        # print the model fit
+        text = [self.__str__(), "RMSE: {:0.5f}".format(self.RMSE),
+                'R-squared adj: {:0.2f}'.format(self.R2_adjusted)]
+        for i, t in enumerate(text):
+            figure.add_layout(Label(x=np.min(self.x), y=np.max(self.y) * (0.95 - i * 0.1), text=t,
+                                    border_line_alpha=0.0, background_fill_alpha=0.7,
+                                    background_fill_color="lightyellow", text_font_size="6pt"))
+        '''
+
+        # edit the grids
+        figure.xgrid.grid_line_alpha=0.3
+        figure.ygrid.grid_line_alpha=0.3
+        figure.xgrid.grid_line_dash=[5, 5]
+        figure.ygrid.grid_line_dash=[5, 5]
+
+        # set the axis labels
+        figure.xaxis.axis_label = "X"
+        figure.yaxis.axis_label = "Y"
