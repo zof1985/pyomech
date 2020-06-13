@@ -14,7 +14,6 @@ import warnings
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
-from sklearn.linear_model import LinearRegression
 
 
 
