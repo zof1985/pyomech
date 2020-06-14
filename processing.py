@@ -5,7 +5,7 @@
 
 
 
-import pyomech.stats as ps
+import stats as ps
 import numpy as np
 import pandas as pd
 import itertools as it

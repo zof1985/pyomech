@@ -12,7 +12,7 @@ import joblib as jl
 import itertools as it
 import scipy.stats as ss
 import warnings
-import pyomech.utils as pu
+import utils as pu
 
 
 
