@@ -143,8 +143,7 @@ class LinearRegression():
         """
 
         # this figure can be generated only if x has 1 dimension
-        if self.x.ndim > 1:
-            raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
+        assert self.x.shape[1] == 1, "x must have 1 dimension."
 
         # create the figure
         p = figure(width=fig_size, height=fig_size, title="Model fit")
@@ -174,8 +173,7 @@ class LinearRegression():
         """
 
         # this figure can be generated only if x has 1 dimension
-        if self.x.ndim > 1:
-            raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
+        assert self.x.shape[1] == 1, "x must have 1 dimension."
 
         # create the figure
         p = figure(width=fig_size, height=fig_size, title="Model fit")
@@ -448,8 +446,7 @@ class PowerRegression():
         """
 
         # this figure can be generated only if x has 1 dimension
-        if self.x.ndim > 1:
-            raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
+        assert self.x.shape[1] == 1, "x must have 1 dimension."
 
         # create the figure
         p = figure(width=fig_size, height=fig_size, title="Model fit")
@@ -479,8 +476,7 @@ class PowerRegression():
         """
 
         # this figure can be generated only if x has 1 dimension
-        if self.x.ndim > 1:
-            raise InputError("if self.x.shape[1] > 1:", "x must have 1 dimension.")
+        assert self.x.shape[1] == 1, "x must have 1 dimension."
 
         # create the figure
         p = figure(width=fig_size, height=fig_size, title="Model fit")
