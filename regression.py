@@ -74,7 +74,7 @@ class LinearRegression():
             self.coefs = self.coefs[1:].flatten()
         else:
             self.intercept = 0
-            self.coefs = coefs.flatten()
+            self.coefs = self.coefs.flatten()
 
 
 
