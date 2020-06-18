@@ -3,5 +3,8 @@
 ################################################################################
 
 /.vs
-.vscode/settings.json
-.gitignore
+/.vscode
+*.gitignore
+/__pycache__
+*.pyc
+*.json
