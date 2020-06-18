@@ -98,7 +98,7 @@ class LinearRegression():
 
 
     def __repr__(self):
-        return self.__str__(self)
+        return self.__str__()
 
 
 
@@ -404,7 +404,7 @@ class PowerRegression():
 
 
     def __repr__(self):
-        return self.__str__(self)
+        return self.__str__()
 
 
 
