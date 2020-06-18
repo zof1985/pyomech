@@ -7,8 +7,6 @@
 
 import numpy as np
 import pandas as pd
-import utils as pu
-import processing as pp
 import warnings
 import os
 from sklearn.model_selection import GridSearchCV
@@ -17,6 +15,8 @@ from sklearn.exceptions import ConvergenceWarning
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
+from .utils import *
+from .processing import *
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
@@ -71,13 +71,13 @@ class Vector(pd.DataFrame):
         plots = {}
         for i, v in enumerate(self.columns):
             if plot:
-                V.loc[V.index, v], ps = pp.cubic_spline_interpolation(y=self[v].values.flatten(),
+                V.loc[V.index, v], ps = cubic_spline_interpolation(y=self[v].values.flatten(),
                                                                       x_old=self.index_to_numpy(),
                                                                       x_new=x, plot=plot)
                 plots[v] = ps
 
             else:
-                V.loc[V.index, v] = pp.cubic_spline_interpolation(y=self[v].values.flatten(),
+                V.loc[V.index, v] = cubic_spline_interpolation(y=self[v].values.flatten(),
                                                                   x_old=self.index.to_numpy(),
                                                                   x_new=x, plot=plot)
 
@@ -363,7 +363,7 @@ class Vector(pd.DataFrame):
         # apply the pyomech.processing.winter_residuals method to each dimension of the Vector
         for i, v in enumerate(self.columns):
             if plot:
-                cut, sse, plt = pp.winter_residuals(x=self[v].values.flatten(),
+                cut, sse, plt = winter_residuals(x=self[v].values.flatten(),
                                                     fs=self.sampling_frequency,
                                                     f_num=f_num,
                                                     f_max=f_max,
@@ -375,7 +375,7 @@ class Vector(pd.DataFrame):
                 plots[v] = plt
 
             else:
-                cut, sse = pp.winter_residuals(x=self[v].values.flatten(),
+                cut, sse = winter_residuals(x=self[v].values.flatten(),
                                                fs=self.sampling_frequency,
                                                f_num=f_num,
                                                f_max=f_max,
@@ -461,12 +461,12 @@ class Vector(pd.DataFrame):
         # apply the pyomech.processing.winter_residuals method to each dimension of the Vector
         for i, v in enumerate(self.columns):
             if plot:
-                yf, plt = pp.butt_filt(self[v].values.flatten(), cutoffs[v], self.sampling_frequency, order, type,
+                yf, plt = butt_filt(self[v].values.flatten(), cutoffs[v], self.sampling_frequency, order, type,
                                        phase_corrected, plot)
                 plots[v] = plt
 
             else:
-                yf = pp.butt_filt(self[v].values.flatten(), cutoffs[v], self.sampling_frequency, order, type,
+                yf = butt_filt(self[v].values.flatten(), cutoffs[v], self.sampling_frequency, order, type,
                                   phase_corrected, plot)
 
             # merge the output
@@ -730,7 +730,7 @@ class Vector(pd.DataFrame):
             v:  (Vector)
                 the imported vector.
         """
-        return Vector.from_df(pu.from_excel(file, sheet, *args, **kwargs)[sheet])
+        return Vector.from_df(from_excel(file, sheet, *args, **kwargs)[sheet])
 
 
 
@@ -768,7 +768,7 @@ class Vector(pd.DataFrame):
         """
         
         # ensure the file can be stored
-        os.makedirs(pu.lvlup(file), exist_ok=True)
+        os.makedirs(lvlup(file), exist_ok=True)
 
         # store the output data
         try:
@@ -802,7 +802,7 @@ class Vector(pd.DataFrame):
                         should a new file be created rather than adding the current vector to an existing one?
         """
         
-        pu.to_excel(file, self.to_df(), sheet, new_file)
+        to_excel(file, self.to_df(), sheet, new_file)
 
 
 
@@ -1080,7 +1080,7 @@ class VectorDict(dict):
         if os.path.isfile(path):
             vd[".".join(path.split(os.path.sep)[-1].split(".")[:-1])] = Vector.from_csv(file, **kwargs)
         else:
-            for i in pu.get_files(path, ".csv", False):
+            for i in get_files(path, ".csv", False):
                 vd[".".join(i.split(os.path.sep)[-1].split(".")[:-1])] = Vector.from_csv(i, **kwargs)  
 
         # return the dict
@@ -1116,7 +1116,7 @@ class VectorDict(dict):
         vd = VectorDict()
 
         # get the sheets
-        dfs = pu.from_excel(path, sheets)
+        dfs = from_excel(path, sheets)
 
         # import the sheets
         for i in dfs:

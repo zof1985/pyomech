@@ -5,7 +5,7 @@
 
 
 
-import stats as ps
+from .stats import *
 import numpy as np
 import pandas as pd
 import itertools as it
@@ -58,7 +58,7 @@ def digitize(x, rule="fd"):
     z = (x - np.min(x)) / (np.max(x) - np.min(x))
 
     # get the width
-    if rule == "fd":    w = 2 * ps.IQR(z) / (len(z) ** (1 / 3))
+    if rule == "fd":    w = 2 * IQR(z) / (len(z) ** (1 / 3))
 
     # only "fd" is currently supported
     else:    raise AttributeError("Only Freedman-Diaconis rule is implemented. Please run again using 'fd' as rule.")

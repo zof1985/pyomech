@@ -6,9 +6,7 @@
 
 
 import numpy as np
-import stats as ps
-import processing as pr
-import utils as pu
+from .utils import *
 import pandas as pd
 
 
@@ -203,7 +201,7 @@ class StateSpace(pd.DataFrame):
             v:  (StateSpace)
                 the imported StateSpace object.
         """
-        return StateSpace.from_df(pu.from_excel(file, sheet, *args, **kwargs)[sheet])
+        return StateSpace.from_df(from_excel(file, sheet, *args, **kwargs)[sheet])
 
 
 
@@ -235,7 +233,7 @@ class StateSpace(pd.DataFrame):
         """
         
         # ensure the file can be stored
-        os.makedirs(pu.lvlup(file), exist_ok=True)
+        os.makedirs(lvlup(file), exist_ok=True)
 
         # store the output data
         try:
@@ -268,7 +266,7 @@ class StateSpace(pd.DataFrame):
                         should a new file be created rather than adding the current vector to an existing one?
         """
         
-        pu.to_excel(file, self.to_df(), sheet, new_file)
+        to_excel(file, self.to_df(), sheet, new_file)
     
 
 

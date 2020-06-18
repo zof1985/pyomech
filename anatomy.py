@@ -1,8 +1,8 @@
 # generic imports
 
 import numpy as np
-import utils as ut
-import vectors as dt
+from .utils import *
+from .vectors import *
 from itertools import combinations
 from scipy.spatial.transform import Rotation
 from pandas import DataFrame, MultiIndex, IndexSlice
@@ -199,14 +199,14 @@ class RigidBody():
         """
         
         # check the mass    
-        ut.classcheck(mass, ['float', 'int'])
+        classcheck(mass, ['float', 'int'])
         
         # check the CoM
-        ut.classcheck(CoM, ['Vector'])
+        classcheck(CoM, ['Vector'])
         assert CoM.shape[1] == 3, "'CoM' must be a 3D vector."
         
         # check the inertia
-        ut.classcheck(inertia, ['Vector'])
+        classcheck(inertia, ['Vector'])
         assert inertia.shape[1] == 3, "'CoM' must be a 3D vector."
         
         # perform CoMparisons
@@ -250,7 +250,7 @@ class RigidBody():
 
         # check entries
         for i in args:
-            ut.classcheck(i, ["RigidBody", "deLeva_RigidBody"])
+            classcheck(i, ["RigidBody", "deLeva_RigidBody"])
             txt = "RigidBody.CoM objects dimensions are not consistent."
             assert self.CoM.shape[1] == i.CoM.shape[1], txt
             assert np.all([j in self.CoM.columns.to_numpy() for j in i.CoM.columns.to_numpy()]), txt
@@ -315,12 +315,12 @@ class deLeva_RigidBody(RigidBody):
         
         # Check the entered parameters
         for i in [origin, end]:
-            ut.classcheck(i, ['Vector'])
+            classcheck(i, ['Vector'])
             assert i.shape[1] == 3, "'origin' and 'end' must be a 3D vector."
         assert np.all([i in origin.df.columns for i in end.df.columns]), "'origin' and 'end' must have the same ndim."
         same_index = np.sum(np.diff(origin.index.to_numpy() - end.index.to_numpy())) == 0
         assert same_index, "'origin' and 'end' must have same index."
-        ut.classcheck(body_weight, ['float', 'int'])
+        classcheck(body_weight, ['float', 'int'])
         assert male or not male, "'male' must be a boolean."
         txt = "'what' must by any of the following string: " + str([i for i in segments.keys()])
         assert what.lower() in [i for i in segments.keys()], txt
@@ -336,7 +336,7 @@ class deLeva_RigidBody(RigidBody):
         idx = CoM.index.to_numpy()
         col = CoM.columns.to_numpy()
         inertia = {i: v for i, v in zip(col, np.atleast_2d([i * gyr for i in length]).T ** 2 * mass)}
-        inertia = dt.Vector(inertia, idx, CoM.xunit, r'$kg\cdot ' + CoM.dunit + '^2$', 'Moment of inertia') 
+        inertia = Vector(inertia, idx, CoM.xunit, r'$kg\cdot ' + CoM.dunit + '^2$', 'Moment of inertia') 
         
         # generate the RigidyBody object
         super().__init__(mass, CoM, inertia, what.lower())
@@ -391,9 +391,9 @@ class ReferenceFrame():
         """
 
         # all data must be vectors
-        ut.classcheck(i, ['Vector', 'NoneType'])
-        ut.classcheck(j, ['Vector', 'NoneType'])
-        ut.classcheck(k, ['Vector', 'NoneType'])
+        classcheck(i, ['Vector', 'NoneType'])
+        classcheck(j, ['Vector', 'NoneType'])
+        classcheck(k, ['Vector', 'NoneType'])
 
         # check the arguments
         versors = [n for n in [i, j ,k] if n is not None]
@@ -439,8 +439,8 @@ class ReferenceFrame():
         """
 
         # check the entered data
-        ut.classcheck(p1, ['Vector'])
-        ut.classcheck(p2, ['Vector'])
+        classcheck(p1, ['Vector'])
+        classcheck(p2, ['Vector'])
         p1.match(p2)
     
         # 1) get the O coordinates
@@ -502,7 +502,7 @@ class ReferenceFrame():
         """
 
         # check the entered data
-        ut.classcheck(i, ["int", "float"])
+        classcheck(i, ["int", "float"])
 
         # check if the index is in the reference frame
         assert i in self.i.index.to_numpy(), "'i' is out of the versors index."
@@ -531,7 +531,7 @@ class ReferenceFrame():
         """
 
         # check the entered data
-        ut.classcheck(i, ["int"])
+        classcheck(i, ["int"])
 
         # check if the index is in the reference frame
         assert i >= 0 and i < self.i.shape[0], "'i' is out of the versors samples range."
@@ -572,11 +572,11 @@ class ReferenceFrame():
         """
 
         # check the entered data
-        ut.classcheck(D, ['dict'])
+        classcheck(D, ['dict'])
         dms = []
         cls = [] 
         for i in D:
-            ut.classcheck(D[i], ['ndarray', 'DataFrame'])
+            classcheck(D[i], ['ndarray', 'DataFrame'])
             assert np.all([j == 3 for j in D[i].shape]), "All arguments of 'D' must be a 3 x 3 ndarray or DataFrame."
             if D[i].__class__.__name__ == "DataFrame":
                 dms += [D[i].columns.to_numpy()]
@@ -591,11 +591,11 @@ class ReferenceFrame():
 
         # build the versors
         i = np.vstack([np.atleast_2d(D[l][0] if cls[0] == "ndarray" else D[l].values[0]) for l in D]).T
-        i = dt.Vector({l: v for l, v in zip(dms, i)}, np.array([l for l in D]), xunit, "", "Versor")
+        i = Vector({l: v for l, v in zip(dms, i)}, np.array([l for l in D]), xunit, "", "Versor")
         j = np.vstack([np.atleast_2d(D[l][1] if cls[0] == "ndarray" else D[l].values[1]) for l in D]).T
-        j = dt.Vector({l: v for l, v in zip(dms, j)}, np.array([l for l in D]), xunit, "", "Versor")
+        j = Vector({l: v for l, v in zip(dms, j)}, np.array([l for l in D]), xunit, "", "Versor")
         k = np.vstack([np.atleast_2d(D[l][2] if cls[0] == "ndarray" else D[l].values[2]) for l in D]).T
-        k = dt.Vector({l: v for l, v in zip(dms, k)}, np.array([l for l in D]), xunit, "", "Versor")
+        k = Vector({l: v for l, v in zip(dms, k)}, np.array([l for l in D]), xunit, "", "Versor")
 
         # create the ReferenceFrame object
         return ReferenceFrame(i, j, k)
@@ -619,8 +619,8 @@ class ReferenceFrame():
         """
 
         # check the entered data
-        ut.classcheck(R, ['ndarray', 'dict'])
-        ut.classcheck(postprod, ['bool'])
+        classcheck(R, ['ndarray', 'dict'])
+        classcheck(postprod, ['bool'])
         if R.__class__.__name__ == "ndarray":
             assert np.all([i == 3 for i in R.shape]), "'R' must be a 3x3 ndarray."
             R = {i: R for i in self.i.index.to_numpy()}

@@ -7,9 +7,6 @@
 import os
 import numpy as np
 import pandas as pd
-import pyomech.processing as pr
-import pyomech.vectors as pv
-import pyomech.utils as pu
 import colorcet as cc
 import scipy.signal as ss
 import scipy.integrate as si
@@ -18,6 +15,8 @@ from bokeh.layouts import *
 from bokeh.models import *
 from bokeh.palettes import *
 from bokeh.io import *
+from .processing import *
+from .utils import *
 
 
 
@@ -340,10 +339,10 @@ class RunningAnalysis():
                 '''
 
                 # obtain the peaks in the anterior-posterior direction
-                pks_Z = pr.find_peaks(self.__scale__(vct['Z'].values.flatten()), height=0.5, plot=False)
+                pks_Z = find_peaks(self.__scale__(vct['Z'].values.flatten()), height=0.5, plot=False)
 
                 # obtain the minima in the vertical direction
-                mns_Y = pr.find_peaks(-self.__scale__(vct['Y'].values.flatten()), height=-0.1, plot=False)
+                mns_Y = find_peaks(-self.__scale__(vct['Y'].values.flatten()), height=-0.1, plot=False)
 
                 # for each peak in pks_Z find the closest minima in mns_Y.
                 return [mns_Y[np.argmin(abs(mns_Y - i))] for i in pks_Z]
@@ -381,15 +380,15 @@ class RunningAnalysis():
         ff = force.butt_filt(cutoffs=self.fc, order=self.n, type="lowpass", phase_corrected=True, plot=False)
 
         # get the first minima in the anterior-posterior direction after fs_x 
-        mns_fz = pr.find_peaks(-self.__scale__(force['Z'].values.flatten()), height=-0.5, plot=False)
+        mns_fz = find_peaks(-self.__scale__(force['Z'].values.flatten()), height=-0.5, plot=False)
         mns_fz = [[i for i in mns_fz if i > j][0] for j in fs_x[:-1]]
 
         # get the first zero after each mns_zf
-        zrs_fz = pr.crossings(force['Z'].values.flatten(), plot=False)
+        zrs_fz = crossings(force['Z'].values.flatten(), plot=False)
         zrs_fz = [[i for i in zrs_fz if i > j][0] for j in mns_fz]
 
         # get the closest peak in Fy to each zrs_fz
-        pks_fy = pr.find_peaks(self.__scale__(force['Y'].values.flatten()), height=0.5, plot=False)
+        pks_fy = find_peaks(self.__scale__(force['Y'].values.flatten()), height=0.5, plot=False)
         ms_x = np.unique([pks_fy[np.argmin(abs(pks_fy - i))] for i in zrs_fz])
         ms = ff.index.to_numpy()[ms_x]
         
@@ -411,10 +410,10 @@ class RunningAnalysis():
             '''
             
             # obtain the minima in the anterior-posterior direction
-            mns_z = pr.find_peaks(-self.__scale__(toe['Z'].values.flatten()), plot=False)
+            mns_z = find_peaks(-self.__scale__(toe['Z'].values.flatten()), plot=False)
 
             # obtain the minima in the vertical direction
-            mns_y = pr.find_peaks(-self.__scale__(toe['Y'].values.flatten()), height=-0.1, plot=False)
+            mns_y = find_peaks(-self.__scale__(toe['Y'].values.flatten()), height=-0.1, plot=False)
             '''
             import matplotlib.pyplot as pl
             pl.plot(toe.index.to_numpy(), self.__scale__(toe['Z'].values.flatten()))
@@ -441,10 +440,10 @@ class RunningAnalysis():
         d1 = force.der1_winter()
         
         # get the peaks in the first derivative and in force with height above 0.66
-        pks_dv = pr.find_peaks(self.__scale__(d1['Y'].values.flatten()), height=0.66, plot=False)
+        pks_dv = find_peaks(self.__scale__(d1['Y'].values.flatten()), height=0.66, plot=False)
 
         # get the force vertical crossings at the 5% of the force peak
-        crs_fv = pr.crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)
+        crs_fv = crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)
 
         # get the closer crossing point to each peak
         fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_dv])
@@ -455,7 +454,7 @@ class RunningAnalysis():
         to = force.index.to_numpy()[to_x]
         
         # get the peaks of the anterior-posterior force
-        pks_fz = pr.find_peaks(force['Z'].values.flatten(), plot=False)
+        pks_fz = find_peaks(force['Z'].values.flatten(), plot=False)
 
         # search for the minima in the anterior posterior direction between each fs and to, then get the first peak
         # after that minima
@@ -557,7 +556,7 @@ class RunningAnalysis():
             while fc <= 20:
 
                 # get the filtered signal
-                spf = pr.butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+                spf = butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
 
                 # try to get the next mid-stance
                 ms = __get_ms__(spf)
@@ -566,7 +565,7 @@ class RunningAnalysis():
                 if np.isnan(ms): return np.nan
 
                 # find the peaks in the first derivative within the next mid-stance
-                pks = pr.find_peaks((spf[2:] - spf[:-2])[:(ms - 1)], plot=False)
+                pks = find_peaks((spf[2:] - spf[:-2])[:(ms - 1)], plot=False)
                 
                 # return the last peak if pks is not empty
                 if len(pks) > 0: return pks[-1] + 1
@@ -592,7 +591,7 @@ class RunningAnalysis():
             """
             try:
                 # find the first flexion point (either a local maxima or minima)
-                pk = np.sort(np.append(pr.find_peaks(sp, plot=False), pr.find_peaks(-sp, plot=False)))[0]
+                pk = np.sort(np.append(find_peaks(sp, plot=False), find_peaks(-sp, plot=False)))[0]
 
                 # get the first point in the signal below th and after pk
                 st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
@@ -626,7 +625,7 @@ class RunningAnalysis():
             """
             
             # get the peaks with amplitude above th
-            pks = pr.find_peaks(self.__scale__(sp), self.th, plot=False)
+            pks = find_peaks(self.__scale__(sp), self.th, plot=False)
 
             # return the first peak or NaN
             return pks[0] if len(pks) > 0 else np.nan
@@ -673,7 +672,7 @@ class RunningAnalysis():
                 sp = speed.values.flatten()[ix_buf]
 
                 # to speed-up the search calculate also a scaled and filtered copy of the speed signal
-                sf = pr.butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+                sf = butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
                 
                 # ensure the signal starts from a toe-off
                 if len(self.steps) == 0:
@@ -786,7 +785,7 @@ class RunningAnalysis():
             if th is None: th = np.mean(x)
 
             # get the peaks in x above th
-            pks = pr.find_peaks(x, height=th, plot=False)
+            pks = find_peaks(x, height=th, plot=False)
             if len(pks) == 0: return []
         
             # get the minima in x below th
@@ -964,7 +963,7 @@ class RunningAnalysis():
                 sp_buf = speed.values.flatten()[ix_buf]
 
                 # get the filtered speed signal
-                spf_buf = pr.butt_filt(sp_buf, self.fc, speed.sampling_frequency, self.n, plot=False)
+                spf_buf = butt_filt(sp_buf, self.fc, speed.sampling_frequency, self.n, plot=False)
                 
                 # get the acceleration data
                 ac_buf = (sp_buf[2:] - sp_buf[:-2]) / (tm_buf[2:] - tm_buf[:-2])
@@ -1274,15 +1273,15 @@ class RunningAnalysis():
         """
 
         # ensure the file folder exists
-        os.makedirs(pu.lvlup(file), exist_ok=True)
+        os.makedirs(lvlup(file), exist_ok=True)
 
         # store the parameters
         params = pd.DataFrame({'source': self.source, 'tw': self.tw, 'n': self.n, 'fc': self.fc, 'fs': self.fs,
                                'th': self.th}, index=[0])
-        pu.to_excel(file, params, '__params__')
+        to_excel(file, params, '__params__')
         
         # store the steps
-        pu.to_excel(file, self.df(), '__steps__')
+        to_excel(file, self.df(), '__steps__')
 
 
         
@@ -1303,7 +1302,7 @@ class RunningAnalysis():
         """
 
         # get the data
-        dfs = pu.from_excel(file, sheets=['__params__', '__steps__'], **kwargs)
+        dfs = from_excel(file, sheets=['__params__', '__steps__'], **kwargs)
 
         # generate an empty RunningAnalysis object
         R = RunningAnalysis()
