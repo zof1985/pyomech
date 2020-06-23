@@ -59,7 +59,7 @@ class LinearRegression():
         Y = np.atleast_2d(y)
         if Y.shape[1] != 1 or Y.ndim < 2:
             Y = Y.T
-        X = np.atleast_2d(x)
+        X = np.atleast_2d(self.x)
         if X.shape[0] != Y.shape[0] and X.shape[1] == Y.shape[0]:
             X = X.T
         
