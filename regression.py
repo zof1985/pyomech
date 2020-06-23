@@ -335,10 +335,11 @@ class PolynomialRegression(LinearRegression):
 class PowerRegression():
 
 
-    def __init__(self, y, x, digits=5, fit_intercept=True):
+    def __init__(self, y, x, digits=5):
         """
-        Perform the power regression of y given x according to Y = alpha * x ^^ beta + gamma
-        Please note that here 
+        Perform the power regression of y given x according to the model:
+        
+                            y = alpha + beta * (x + gamma) ** delta
 
         Input:
             y:              (1D array)
@@ -349,42 +350,35 @@ class PowerRegression():
 
             digits:         (int)
                             the number of digits available for each coefficient.
-
-            fit_intercept:  (bool)
-                            should the intercept (i.e. offset) be included in the model?
         """ 
 
+        # check the entered data
+        assert y.ndim == 1, "'y' must be a 1D array."
+        assert x.ndim == 1, "'x' must ba a 1D array."
+
         # store the entered parameters
-        self.y = np.array([y]).flatten()
-        self.x = np.array([x]).flatten()
-        self.fit_intercept = fit_intercept
-        self.digits = digits
-
-        # correct the shape of y and x
-        Y = np.atleast_2d(np.log(y))
-
-        # handle the intercept
-        if self.fit_intercept:
-            self.gamma = np.round(np.min(self.y))
-            Y = Y - self.gamma
-        else:
-            self.gamma = 0
-
-        if Y.shape[1] != 1 or Y.ndim < 2:
-            Y = Y.T
-        X = np.atleast_2d(np.log(x))
-        if X.shape[0] != Y.shape[0] and X.shape[1] == Y.shape[0]:
-            X = X.T
-
-        # add the intercept to the linearized model
-        X = np.hstack([np.ones(Y.shape), X])
+        self.y = y
+        self.x = x
+        self.digits = digits       
         
+        # get delta as the offset of y
+        self.alpha = np.round(np.min(self.y), digits)
+        
+        # get Y (ensure no values are zero)
+        Y = np.atleast_2d(np.log(y - self.alpha + np.finfo(float).eps)).T
+                
+        # get beta as the offset of x
+        self.gamma = np.round(1 - np.round(np.min(x), digits), digits)
+        
+        # get X (ensure no values are zero)
+        X = np.hstack([np.ones(Y.shape), np.atleast_2d(np.log(x + self.beta + np.finfo(float).eps)).T])
+                
         # get the coefficients
         coefs = np.linalg.inv(X.T.dot(X)).dot(X.T).dot(Y)
         
         # get the coefficients
-        self.beta = np.round(coefs[1][0], digits)
-        self.alpha = np.round(np.e ** coefs[0][0], digits)
+        self.delta = np.round(coefs[1][0], digits)
+        self.beta = np.round(np.e ** coefs[0][0], digits)
 
 
 
@@ -400,7 +394,7 @@ class PowerRegression():
         """
         predict use the fitted model to predict regression output according to the model y = alpha * x ** beta.
         """
-        return self.alpha * (x ** self.beta) + self.gamma
+        return self.alpha + self.beta * (x + self.gamma) ** self.delta
 
 
 
@@ -410,7 +404,7 @@ class PowerRegression():
 
 
     def __str__(self):
-        return "Y = {} X ^ {}".format(self.alpha, self.beta)
+        return "Y = {} + {} * (X + {}) ** {}".format(self.alpha, self.beta, self.gamma, self.delta)
 
 
 

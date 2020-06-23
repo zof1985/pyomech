@@ -224,7 +224,7 @@ class RunningAnalysis():
 
 
 
-    def __init__(self, source="", **kwargs):
+    def __init__(self, selected_speed, source="", **kwargs):
                 
         # get the new_approach input if provided
         try:
@@ -259,7 +259,19 @@ class RunningAnalysis():
 
         # add the new source
         self.source = source
-    
+
+        # set the values for outlier detection according to the selected speed
+        # for a better usability of the data, the calculated values are converted into a Step object. This is obtained setting:
+        #
+        #   foot_strike = 0
+        #   mid_stance  = contact_time - propulsion_time
+        #   toe_off     = contact_time
+        #   landing     = step_time
+        #
+        # the contact_time, propulsion_time, step_time and flight_time are calculated
+
+        self.expected_avg = Step()
+
 
 
     def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None, meta_left=None,
@@ -1566,6 +1578,58 @@ class RunningAnalysis():
 
 
 
-    @property
     def blackbox_delays(self):
         return {'stato_w': -0.002, 'wmin': -0.032, 'wmax': -0.032}
+    
+
+
+    def treadmill_new2_delays(self, speed_kmh):
+        """
+        return the correction coefficients for the treadmill_new2 algorithm.
+        
+        Input:
+            speed_kmh:  (float)
+                        the actual selected speed in km/h.
+        
+        Output:
+            correction: (dict)
+                        A dict containing the correction coefficients for the foot-strike,
+                        mid-stance, toe-off and landings.
+        """
+        return {
+            'foot_strike': 0.01835 + 0.00098 * speed_kmh,
+            'mid_stance': 0.00206 * speed_kmh - 0.00932,
+            'toe_off': 0.05917 - 0.00393 * speed_kmh,
+            'landing': 0.01835 + 0.00098 * speed_kmh
+            }
+    
+
+
+    def isOutlier(self, step, update=True, n_std=1.):
+        """
+        check if "step" is an outlier.
+        
+        Input:
+            step:   (Step)
+                    a Step object
+            
+            update: (boolean)
+                    True if you wish to update the expected set of values stored within the current GaitAnalysis
+                    object.
+            
+            n_std:  (float)
+                    The number of standard deviations to be used as threshold for labelling step as "outlier" or
+                    "inlier".
+        
+        Output:
+            O:      (boolean)
+                    True if "step" is an outlier. False, otherwise.
+        
+        Procedure:
+            This method is designed to work with real-time acquisitions. The calculation starts from some starting
+            values for the biofeedback events and from mean and standard deviation of the squared distance
+            distribution calculated from empirical data. These values are used to label the actual step as "Inlier"
+            or "Outlier" according to how far its squared distance lies compared to the expected set of biofeedback
+            parameters.
+        """
+
