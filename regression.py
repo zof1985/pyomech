@@ -71,10 +71,10 @@ class LinearRegression():
         self.coefs = np.round(np.linalg.inv(X.T.dot(X)).dot(X.T).dot(Y), digits)
         if fit_intercept:
             self.intercept = self.coefs[0][0]
-            self.coefs = np.atleast_2d(self.coefs[1:].flatten())
+            self.coefs = self.coefs[1:].flatten()
         else:
             self.intercept = 0
-            self.coefs = np.atleast_2d(self.coefs.flatten())
+            self.coefs = self.coefs.flatten()
 
 
 
@@ -93,7 +93,8 @@ class LinearRegression():
         if len(self.coefs) == 0:
             return self.intercept
         else:
-            return np.sum(x * self.coefs, 1).flatten() + self.intercept
+            X = np.atleast_2d(x).T if x.ndim == 1 else x
+            return np.sum(X * self.coefs, 1).flatten() + self.intercept
 
 
 
