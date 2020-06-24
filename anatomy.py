@@ -1,7 +1,7 @@
 # generic imports
 
 import numpy as np
-from utils import classcheck
+from stats import classcheck
 from vectors import Vector
 from itertools import combinations
 from scipy.spatial.transform import Rotation
