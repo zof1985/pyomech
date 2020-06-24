@@ -15,8 +15,8 @@ from bokeh.layouts import *
 from bokeh.models import *
 from bokeh.palettes import *
 from bokeh.io import *
-from .processing import *
-from .utils import *
+from processing import *
+from utils import *
 
 
 
@@ -143,10 +143,50 @@ class Step():
 
 
     def __sub__(self, *args):
-        if self.isvalid() and args[0].isvalid():
-            return Step(**{i: getattr(self, i) - getattr(args[0], i) for i in Step.events_names()})
-        else:
-            return Step()
+        classcheck(args[0], ['float', 'int', 'Step'])
+        try:
+            if self.isvalid() and args[0].isvalid():
+                return Step(**{i: getattr(self, i) - getattr(args[0], i) for i in Step.events_names()})
+            else:
+                return Step()
+        except Exception:
+            return Step(**{i: getattr(self, i) - args[0] for i in Step.events_names()})
+
+
+
+    def __add__(self, *args):
+        classcheck(args[0], ['float', 'int', 'Step'])
+        try:
+            if self.isvalid() and args[0].isvalid():
+                return Step(**{i: getattr(self, i) + getattr(args[0], i) for i in Step.events_names()})
+            else:
+                return Step()
+        except Exception:
+            return Step(**{i: getattr(self, i) + args[0] for i in Step.events_names()})
+
+
+
+    def __mul__(self, *args):
+        classcheck(args[0], ['float', 'int', 'Step'])
+        try:
+            if self.isvalid() and args[0].isvalid():
+                return Step(**{i: getattr(self, i) * getattr(args[0], i) for i in Step.events_names()})
+            else:
+                return Step()
+        except Exception:
+            return Step(**{i: getattr(self, i) * args[0] for i in Step.events_names()})
+
+
+
+    def __truediv__(self, *args):
+        classcheck(args[0], ['float', 'int', 'Step'])
+        try:
+            if self.isvalid() and args[0].isvalid():
+                return Step(**{i: getattr(self, i) / getattr(args[0], i) for i in Step.events_names()})
+            else:
+                return Step()
+        except Exception:
+            return Step(**{i: getattr(self, i) / args[0] for i in Step.events_names()})
 
 
 
@@ -1651,13 +1691,15 @@ class RunningAnalysis():
         D += (step.flight_time - self.expected_avg.flight_time) ** 2
 
         # label the current step
-        label = "Inlier" if D <= self.distance_mean + n_std * self.distance_std else "Outlier"
+        out = D > self.distance_mean + n_std * self.distance_std
 
         # update
-        if update and label == "Inlier":
-            N = len(self.steps + 1)
+        if update and not out:
+            N = len(self.steps) + 1
             new_step = step - step.foot_strike
             self.expected_avg = (self.expected_avg * N + new_step) / (N + 1)
             self.distance_mean = (self.distance_mean * N + D) / (N + 1)
             self.distance_std = (((self.distance_std ** 2) * N + (D - self.distance_mean) ** 2) / (N + 1)) ** 0.5
 
+        # return the decision
+        return out

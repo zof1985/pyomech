@@ -15,8 +15,8 @@ from sklearn.exceptions import ConvergenceWarning
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
-from .utils import *
-from .processing import *
+from utils import *
+from processing import *
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
