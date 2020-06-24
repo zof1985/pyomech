@@ -5,7 +5,7 @@
 
 
 
-from stats import *
+from .stats import *
 import numpy as np
 import pandas as pd
 import itertools as it
