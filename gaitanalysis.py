@@ -261,21 +261,33 @@ class RunningAnalysis():
         self.source = source
 
         # set the values for outlier detection according to the selected speed
-        # for a better usability of the data, the calculated values are converted into a Step object. This is obtained setting:
+        # for a better usability of the data, the calculated values are converted into a Step object.
+        # This is obtained setting:
         #
         #   foot_strike = 0
         #   mid_stance  = contact_time - propulsion_time
         #   toe_off     = contact_time
-        #   landing     = step_time
+        #   landing     = contact_time + flight_time
         #
-        # the contact_time, propulsion_time, step_time and flight_time are calculated
+        # the contact_time, propulsion_time and flight_time are calculated according to
+        # the following set of equations:
+        contact_time = -0.86230308 + 1.09877909 * (selected_speed - 7) ** (-0.02118262)
+        flight_time = -0.88354000 + 1.02502752 * (selected_speed - 7) ** (+0.00139629)
+        propulsion_time = -0.96341769 + 1.12296199 * (selected_speed - 7) ** (-0.03464273)
+        foot_strike = 0.
+        mid_stance = contact_time - propulsion_time
+        toe_off = contact_time
+        landing = contact_time + flight_time
+        self.expected_avg = Step(foot_strike, mid_stance, toe_off, landing)
 
-        self.expected_avg = Step()
+        # get the expected distance distribution parameters
+        self.distance_mean = -0.99997903 + 1.00106241 * (selected_speed - 7) ** (-0.00042668)
+        self.distance_std = -0.9997899 + 1.00076189 * (selected_speed - 7) ** (-0.00027001)
+        
 
 
-
-    def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None, meta_left=None,
-                     toe_left=None):
+    def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None,
+                     meta_left=None, toe_left=None):
         """
         method extracting the gait events from kinematic data of the feet and the resultant force coming from a
         force platform.
@@ -1632,4 +1644,20 @@ class RunningAnalysis():
             or "Outlier" according to how far its squared distance lies compared to the expected set of biofeedback
             parameters.
         """
+
+        # get the distance between step and the expected step
+        D = (step.contact_time - self.expected_avg.contact_time) ** 2
+        D += (step.propulsion_time - self.expected_avg.propulsion_time) ** 2
+        D += (step.flight_time - self.expected_avg.flight_time) ** 2
+
+        # label the current step
+        label = "Inlier" if D <= self.distance_mean + n_std * self.distance_std else "Outlier"
+
+        # update
+        if update and label == "Inlier":
+            N = len(self.steps + 1)
+            new_step = step - step.foot_strike
+            self.expected_avg = (self.expected_avg * N + new_step) / (N + 1)
+            self.distance_mean = (self.distance_mean * N + D) / (N + 1)
+            self.distance_std = (((self.distance_std ** 2) * N + (D - self.distance_mean) ** 2) / (N + 1)) ** 0.5
 
