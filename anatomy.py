@@ -1,8 +1,8 @@
 # generic imports
 
 import numpy as np
-from utils import *
-from vectors import *
+from utils import classcheck
+from vectors import Vector
 from itertools import combinations
 from scipy.spatial.transform import Rotation
 from pandas import DataFrame, MultiIndex, IndexSlice

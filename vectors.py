@@ -15,8 +15,8 @@ from sklearn.exceptions import ConvergenceWarning
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
-from utils import *
-from processing import *
+from utils import from_excel, lvlup, get_files
+from processing import butt_filt, winter_residuals
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
@@ -109,7 +109,7 @@ class Vector(pd.DataFrame):
             figures += [f]
             
         # return all
-        return vf, gridplot(figures, toolbar_location="right", merge_tools=True)
+        return V, gridplot(figures, toolbar_location="right", merge_tools=True)
 
 
 
@@ -141,7 +141,7 @@ class Vector(pd.DataFrame):
                 Hoboken, New Jersey: John Wiley & Sons Inc; 2009.
         '''
         d2 = self.loc[1:-1]
-        t = np.vstack(np.atleast_2d([self.index.to_numpy() for i in a.columns])).T
+        t = np.vstack(np.atleast_2d([self.index.to_numpy() for i in self.columns])).T
         x = self.values
         dv = (x[2:] - x[1:-1]) / (t[2:] - t[1:-1]) - (x[1:-1] - x[:-2]) / (t[1:-1] - t[:-2])
         dt = (t[2:] - t[:-2]) * 0.5
@@ -709,7 +709,7 @@ class Vector(pd.DataFrame):
 
 
     @staticmethod
-    def from_excel(file, sheet):
+    def from_excel(file, sheet, *args, **kwargs):
         """
         return the Vector from an excel file. The file is formatted having a column named "Index_ZZZ" and the others as
         "XXX|YYY_ZZZ" where:
@@ -1078,7 +1078,7 @@ class VectorDict(dict):
 
         # check if the path is a file or a folder and populate the VectorDict accordingly
         if os.path.isfile(path):
-            vd[".".join(path.split(os.path.sep)[-1].split(".")[:-1])] = Vector.from_csv(file, **kwargs)
+            vd[".".join(path.split(os.path.sep)[-1].split(".")[:-1])] = Vector.from_csv(path, **kwargs)
         else:
             for i in get_files(path, ".csv", False):
                 vd[".".join(i.split(os.path.sep)[-1].split(".")[:-1])] = Vector.from_csv(i, **kwargs)  
