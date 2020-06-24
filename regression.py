@@ -393,7 +393,9 @@ class PowerRegression():
 
     def predict(self, x):
         """
-        predict use the fitted model to predict regression output according to the model y = alpha * x ** beta.
+        predict use the fitted model to predict regression output according to the model:
+        
+                            y = alpha + beta * (x + gamma) ** delta.
         """
         return self.alpha + self.beta * (x + self.gamma) ** self.delta
 
@@ -405,7 +407,7 @@ class PowerRegression():
 
 
     def __str__(self):
-        return "Y = {} + {} * (X + {}) ** {}".format(self.alpha, self.beta, self.gamma, self.delta)
+        return "Y = {:+}{:+}*(X{:+})**({:+})".format(self.alpha, self.beta, self.gamma, self.delta)
 
 
 
