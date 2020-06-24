@@ -6,7 +6,7 @@
 
 
 import numpy as np
-from .utils import classcheck, lvlup, from_excel
+from .utils import *
 import pandas as pd
 
 
