@@ -363,16 +363,16 @@ class PowerRegression():
         eps = np.finfo(float).eps
         
         # get delta as the offset of y
-        self.alpha = np.round(np.min(self.y), digits)
+        self.alpha = np.round(np.min(self.y) - 1, digits)
         
         # get Y (ensure no values are zero)
-        Y = np.atleast_2d(np.log(y - self.alpha + eps)).T
+        Y = np.log(np.atleast_2d(y - self.alpha).T)
                 
         # get beta as the offset of x
         self.gamma = np.round(1 - np.round(np.min(x), digits), digits)
         
         # get X (ensure no values are zero)
-        X = np.hstack([np.ones(Y.shape), np.log(np.atleast_2d(x + self.gamma + eps).T)])
+        X = np.hstack([np.ones(Y.shape), np.log(np.atleast_2d(x + self.gamma).T)])
                 
         # get the coefficients
         coefs = np.linalg.inv(X.T.dot(X)).dot(X.T).dot(Y)
