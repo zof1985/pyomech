@@ -6,7 +6,7 @@
 
 
 import numpy as np
-from .utils import *
+from utils import *
 import pandas as pd
 
 

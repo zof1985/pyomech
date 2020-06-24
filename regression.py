@@ -359,19 +359,20 @@ class PowerRegression():
         # store the entered parameters
         self.y = y
         self.x = x
-        self.digits = digits       
+        self.digits = digits
+        eps = np.finfo(float).eps
         
         # get delta as the offset of y
         self.alpha = np.round(np.min(self.y), digits)
         
         # get Y (ensure no values are zero)
-        Y = np.atleast_2d(np.log(y - self.alpha + np.finfo(float).eps)).T
+        Y = np.atleast_2d(np.log(y - self.alpha + eps)).T
                 
         # get beta as the offset of x
         self.gamma = np.round(1 - np.round(np.min(x), digits), digits)
         
         # get X (ensure no values are zero)
-        X = np.hstack([np.ones(Y.shape), np.atleast_2d(np.log(x + self.beta + np.finfo(float).eps)).T])
+        X = np.hstack([np.ones(Y.shape), np.log(np.atleast_2d(x + self.gamma + eps).T)])
                 
         # get the coefficients
         coefs = np.linalg.inv(X.T.dot(X)).dot(X.T).dot(Y)

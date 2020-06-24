@@ -1,8 +1,8 @@
 # generic imports
 
 import numpy as np
-from .utils import *
-from .vectors import *
+from utils import *
+from vectors import *
 from itertools import combinations
 from scipy.spatial.transform import Rotation
 from pandas import DataFrame, MultiIndex, IndexSlice
@@ -631,8 +631,9 @@ class ReferenceFrame():
         
         # rotate the reference frame
         M = self.to_dict()
+        cols = [i for i in M]
         for i in R:
-            M[i] = M[i].dot(R[i]) if postprod else DataFrame(R[i].dot(M[i].values), index=['i', 'j', 'k'], columns=dms)
+            M[i] = M[i].dot(R[i]) if postprod else DataFrame(R[i].dot(M[i].values), index=['i', 'j', 'k'], columns=cols)
 
         # return the reference frame
         return ReferenceFrame.from_dict(M, self.i.xunit)
