@@ -1027,7 +1027,7 @@ class VectorDict(dict):
 
         # store all Vectors
         for v in self.keys():
-            self[v].to_csv(path + v + ".csv", **kwargs)
+            self[v].to_csv(os.path.sep.join([path, v + ".csv"]), **kwargs)
     
 
 
