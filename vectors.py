@@ -526,6 +526,40 @@ class Vector(pd.DataFrame):
         return vf, p
     
 
+
+    @staticmethod
+    def angle(A, B, C):
+        """
+        return the angle ABC using the Carnot theorem.
+
+        Input:
+            A:  (Vector)
+                The coordinates of one point.
+
+            B:  (Vector)
+                The coordinates of the point over which the angle has to be calculated.
+            
+            C:  (Vector)
+                The coordinates of the third point.
+        
+        Output:
+            K:  (Vector)
+                A 1D vector containing the result of:
+                                     2          2            2
+                           /  (B - C)  +  (A - C)  -  (A - B)  \
+                    arcos | ----------------------------------- |
+                           \      2 * (B - C) * (A - C)        /
+        """
+
+        # get a, b and c
+        a = (B - C)
+        b = (A - C)
+        c = (B - A)
+
+        # return the angle
+        return ((a ** 2 + b ** 2 - c ** 2) / (2 * a * b).values).apply(np.arccos, 0)
+
+
     
     @property
     def module(self):

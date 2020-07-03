@@ -264,28 +264,23 @@ class RunningAnalysis():
 
 
 
-    def __init__(self, selected_speed, source="", **kwargs):
+    def __init__(self, source="", **kwargs):
                 
-        # get the new_approach input if provided
-        try:
-            new_approach = kwargs.pop("new_approach")
-        except Exception:
-            pass
-
         # treadmill data was provided
         if np.any([i == "speed" for i in kwargs.keys()]):
-            if new_approach:
-                self.__from_treadmill_new2__(**kwargs)
-            else:
-                self.__from_treadmill_new1__(**kwargs)
-        
+            self.__from_treadmill__(**kwargs)
+                    
         # force data was provided
         elif np.any([i == "force" for i in kwargs.keys()]):
-            self.__from_lab__(**kwargs)
+            self.__from_force__(**kwargs)
 
         # blackbox data was provided
         elif np.any([i == "blackbox" for i in kwargs.keys()]):
             self.__from_blackbox__(**kwargs)
+        
+        # kinematic data was provided
+        elif np.any([i == "heel_right" for i in kwargs.keys()]):
+            self.__from_kinematics__(**kwargs)
         
         # the provided parameters are unknown thus create an empty object
         else:
@@ -299,77 +294,60 @@ class RunningAnalysis():
 
         # add the new source
         self.source = source
-
-        # set the values for outlier detection according to the selected speed
-        # for a better usability of the data, the calculated values are converted into a Step object.
-        # This is obtained setting:
-        #
-        #   foot_strike = 0
-        #   mid_stance  = contact_time - propulsion_time
-        #   toe_off     = contact_time
-        #   landing     = contact_time + flight_time
-        #
-        # the contact_time, propulsion_time and flight_time are calculated according to
-        # the following set of equations:
-        contact_time = -0.86230308 + 1.09877909 * (selected_speed - 7) ** (-0.02118262)
-        flight_time = -0.88354000 + 1.02502752 * (selected_speed - 7) ** (+0.00139629)
-        propulsion_time = -0.96341769 + 1.12296199 * (selected_speed - 7) ** (-0.03464273)
-        foot_strike = 0.
-        mid_stance = contact_time - propulsion_time
-        toe_off = contact_time
-        landing = contact_time + flight_time
-        self.expected_avg = Step(foot_strike, mid_stance, toe_off, landing)
-
-        # get the expected distance distribution parameters
-        self.distance_mean = -0.99997903 + 1.00106241 * (selected_speed - 7) ** (-0.00042668)
-        self.distance_std = -0.9997899 + 1.00076189 * (selected_speed - 7) ** (-0.00027001)
         
 
-
-    def __from_lab__(self, force, heel_right=None, meta_right=None, toe_right=None, heel_left=None,
-                     meta_left=None, toe_left=None):
+    def __from_kinematics__(self, heel_right, toe_right, heel_left, toe_left, meta_right, meta_left):
         """
-        method extracting the gait events from kinematic data of the feet and the resultant force coming from a
-        force platform.
+        method extracting the gait events from kinematic data.
 
         Input:
-            force:              (Vector)
-                                the vector containing the resultant force to be used for the analysis.
-            
             heel_right/left:    (Vector)
-                                the vector containing the 3D position in space of the heel. If not None, this is used
-                                to estimate the foot-strike.
+                                the vector containing the 3D position in space of the heel.
             
             meta_right/left:    (Vector)
                                 the vector containing the 3D position in space of the 5th metatarsal head. If not None,
-                                this is used to estimate the foot-strike.
+                                this is used to estimate the foot-strike. If provided, the first relative minima
+                                occurring between heels and metas is used to define the foot-strike. 
 
             toe_right/left:     (Vector)
                                 the vector containing the 3D position in space of longest toe of the foot. If not None,
                                 this is used to estimate the toe-off.
-
-            tw:                 (float)
-                                not used. Parameter left only for compatibility with the other methods.
-
-            fc:                 (float)
-                                the cut-off frequency used to low-pass filter the data via a phase-corrected
-                                Butterworth filter.
-
-            n:                  (int)
-                                the order of the phase-corrected Butterworth low-pass filter.
         """
         
-
         # store the additional parameters
         self.tw = None
         self.fc = None
         self.n = None
         self.th = None
-        self.fs = force.sampling_frequency
-        """
+        self.fs = heel_right.sampling_frequency
 
-        ########    FOOT-STRIKES    ########
 
+        # FOOT-STRIKES
+
+
+        def get_fs(vct):
+            '''
+            extract the foot-strike from kinematic data (heel or meta).
+
+            Input:
+                vct:    (Vector)
+                        a Vector object representing the position of the heel or of the 5th metatarsal head over
+                        time.
+
+            Output:
+                fs:     (list)
+                        the time instants representing the foot-strikes.
+            '''
+
+            # obtain the peaks in the anterior-posterior direction
+            pks_Z = find_peaks(self.__scale__(vct['Z'].values.flatten()), height=0.5, plot=False)
+
+            # obtain the minima in the vertical direction
+            mns_Y = find_peaks(-self.__scale__(vct['Y'].values.flatten()), height=-0.1, plot=False)
+
+            # for each peak in pks_Z find the closest minima in mns_Y.
+            return np.unique([mns_Y[np.argmin(abs(mns_Y - i))] for i in pks_Z])      
+        
         
         def get_foot_strikes(heel, meta):
             '''
@@ -386,31 +364,6 @@ class RunningAnalysis():
                 fs:     (list)
                         the time instants of the foot-strikes.
             '''
-
-
-            def get_fs(vct):
-                '''
-                extract the foot-strike from kinematic data (heel or meta).
-
-                Input:
-                    vct:    (Vector)
-                            a Vector object representing the position of the heel or of the 5th metatarsal head over
-                            time.
-
-                Output:
-                    fs:     (list)
-                            the time instants representing the foot-strikes.
-                '''
-
-                # obtain the peaks in the anterior-posterior direction
-                pks_Z = find_peaks(self.__scale__(vct['Z'].values.flatten()), height=0.5, plot=False)
-
-                # obtain the minima in the vertical direction
-                mns_Y = find_peaks(-self.__scale__(vct['Y'].values.flatten()), height=-0.1, plot=False)
-
-                # for each peak in pks_Z find the closest minima in mns_Y.
-                return [mns_Y[np.argmin(abs(mns_Y - i))] for i in pks_Z]
-
 
             # get the estimates separately
             fs_heel = get_fs(heel)
@@ -429,30 +382,19 @@ class RunningAnalysis():
 
 
         # get the foot-strikes estimates from heel and meta
-        fs_right = get_foot_strikes(heel_right, meta_right)
-        fs_left = get_foot_strikes(heel_left, meta_left)
+        fs_right = get_foot_strikes(heel_right, meta_right) if meta_right is not None else get_fs(heel_right)
+        fs_left = get_foot_strikes(heel_left, meta_left) if meta_left is not None else get_fs(heel_left)
         
         # keep unique events
         fs_x = np.sort(np.unique(np.append(fs_right, fs_left)))
         fs = heel_right.index.to_numpy()[fs_x]
                                 
         
-        ########    MID-STANCE    ########
+        # MID-STANCES
 
 
         # get the filtered force
-        ff = force.butt_filt(cutoffs=self.fc, order=self.n, type="lowpass", phase_corrected=True, plot=False)
-
-        # get the first minima in the anterior-posterior direction after fs_x 
-        mns_fz = find_peaks(-self.__scale__(force['Z'].values.flatten()), height=-0.5, plot=False)
-        mns_fz = [[i for i in mns_fz if i > j][0] for j in fs_x[:-1]]
-
-        # get the first zero after each mns_zf
-        zrs_fz = crossings(force['Z'].values.flatten(), plot=False)
-        zrs_fz = [[i for i in zrs_fz if i > j][0] for j in mns_fz]
-
-        # get the closest peak in Fy to each zrs_fz
-        pks_fy = find_peaks(self.__scale__(force['Y'].values.flatten()), height=0.5, plot=False)
+        
         ms_x = np.unique([pks_fy[np.argmin(abs(pks_fy - i))] for i in zrs_fz])
         ms = ff.index.to_numpy()[ms_x]
         
@@ -498,7 +440,28 @@ class RunningAnalysis():
         # sort them and keep only unique evens
         to_x = np.sort(np.unique(np.append(to_right, to_left)))
         to = toe_right.index.to_numpy()[to_x]
+                
+        # store the steps
+        self.__add_steps__(fs, ms, to)
+
+
+
+    def __from_force__(self, force):
         """
+        method extracting the gait events from force data coming from a force platform.
+
+        Input:
+            force:              (Vector)
+                                the vector containing the resultant force to be used for the analysis.
+        """
+        
+
+        # store the additional parameters
+        self.tw = None
+        self.fc = None
+        self.n = None
+        self.th = None
+        self.fs = force.sampling_frequency
 
         # get force first derivative
         d1 = force.der1_winter()
@@ -569,7 +532,7 @@ class RunningAnalysis():
   
 
      
-    def __from_treadmill_new2__(self, speed, tw=2, fc=10, n=2, th=0.8):
+    def __from_treadmill__(self, speed, tw=2, fc=10, n=2, th=0.8):
         """
         method extracting the gait events from treadmill data using the new2 approach.
 
@@ -780,311 +743,7 @@ class RunningAnalysis():
                     self.steps += [Step(fs, ms, to, ln)]
                 else:
                     proceed = False
-    
 
-
-    def __from_treadmill_new1__(self, speed, tw=2, fc=20, n=2):
-        """
-        method extracting the gait events from treadmill data using the new1 approach.
-
-        Input:
-            speed:  (Vector)
-                    the vector containing the treadmill speed data to be used for the analysis.
-
-            tw:     (float)
-                    the time-window (in seconds) used to search for the next step
-
-            fc:     (float)
-                    the cut-off frequency used to low-pass filter the data via a phase-corrected Butterworth filter.
-
-            n:      (int)
-                    the order of the phase-corrected Butterworth low-pass filter.
-        """
-        
-
-        def crossings(x, th=None):
-            """
-            get the location of the th crossings in x.
-
-            Input:
-                x:  (1D ndarray)
-                    a signal.
-
-                th: (float, NoneType)
-                    the threshold that is used as reference. If None, the mean of x is used as
-                    threshold.
-
-            Output:
-                c:  (ndarray)
-                    the location (in sample points) of the crossings.
-            """
-
-            # get the threshold
-            if th is None: th = np.mean(x)
-
-            # get the crossings
-            return np.argwhere(abs(np.diff(np.sign(x - th))) == 2).flatten()
-
-
-        def clusters(x, th=None):
-            """
-            get a cluster of peaks. A cluster is a group of peaks where the interrupting minima are
-            still above a given threshold.
-
-            Input:
-                x:  (1D ndarray)
-                    a signal.
-
-                th: (float, NoneType)
-                    the threshold that is used to ensure the cluster. if None, the mean of x is used as
-                    threshold.
-
-            Output:
-                c:  (list)
-                    a list of 1D nd arrays with the location (in samples) of the peaks of each cluster
-                    in x.
-            """
-
-            # get the threshold
-            if th is None: th = np.mean(x)
-
-            # get the peaks in x above th
-            pks = find_peaks(x, height=th, plot=False)
-            if len(pks) == 0: return []
-        
-            # get the minima in x below th
-            mns = np.unique(np.concatenate([[0], crossings(x, th), [len(x) - 1]]).flatten())
-
-            # get the clusters
-            c = [pks[np.argwhere((pks > mns[i]) & (pks < mns[i + 1])).flatten()]
-                 for i in np.arange(len(mns) - 1)]
-        
-            # clean the list from empty clusters
-            return [i for i in c if len(i) > 0]
-
-
-        def __get_fs__(time, position, speed, acceleration):
-            """
-            This method serves the purpose of extracting the first foot-strike.
-
-            Input:
-                time:           (1D ndarray)
-                                The time signal
-
-                position:       (1D ndarray)
-                                The position signal
-                
-                speed:          (1D ndarray)
-                                The speed signal
-
-                acceleration:   (1D ndarray)
-                                The acceleration signal
-
-            Output:
-                fs:     (float)
-                        the time occurrence of the first identified foot-strike in the signal.
-        
-            Procedure:
-                1)  Get the first peaks cluster in pos above half of the pos values range.
-                2)  Get the first minima with value below half of the pos range and occurring after 1).
-                3)  Get the lowest minima in speed occurring between 1) and 2) and having amplitude below half of
-                    the speed range.
-                4)  Get the last minima in the acceleration occurring after 3).
-
-            """
-        
-            # get the first peak in pos
-            pos_pks = clusters(position, 0.5)
-            pos_pk = 0 if len(pos_pks) == 0 else pos_pks[0][0]
-
-            # get the first minima in pos after the peak
-            pos_mns = clusters(-position[pos_pk:])
-            pos_mn = (len(position) - 1) if len(pos_mns) == 0 else (pos_mns[0][0] + pos_pk)
-
-            # get the last speed minima between pos_pk and pos_mn
-            spe_mns = clusters(-speed[np.arange(pos_pk, pos_mn)])
-            if len(spe_mns) == 0:
-                spe_mn  = pos_mn
-            else:
-                spe_mn = pos_pk - 1 + spe_mns[-1][np.argmin(speed[spe_mns[-1]])]
-        
-            # get the last peak in speed before spe_mn
-            spe_pks = clusters(speed[:spe_mn], speed[spe_mn] + 0.2)
-            spe_pk = spe_mn if len(spe_pks) == 0 else spe_pks[-1][-1]
-
-            # get the last minima in acceleration before spe_pk
-            acc_mns = clusters(-acceleration[:spe_pk], -2)
-            return time[spe_pk if len(acc_mns) == 0 else acc_mns[-1][-1]]
-
-
-        def __get_ms__(time, position, speed, acceleration):
-            """
-            This method serves the purpose of extracting the first mid-stance.
-
-            Input:
-                time:           (1D ndarray)
-                                The time signal
-
-                position:       (1D ndarray)
-                                The position signal
-                
-                speed:          (1D ndarray)
-                                The speed signal
-
-                acceleration:   (1D ndarray)
-                                The acceleration signal
-
-            Output:
-                ms:     (float)
-                        the time occurrence of the first identified mid-stance in the signal.
-        
-            Procedure:
-                1)  Get the first local minima in pos with amplitude lower than half of the pos range.
-                2)  If no local minima are found return None, otherwise get the last local minima in speed
-                    occurring before the point found in 1 and having amplitude below half of the speed range.
-
-            Note:
-                The algorithm is designed to work on a signal portion starting from a foot-strike.
-            """
-
-            # look at the first minima in pos with value lower than its mean value
-            pos_mns = clusters(-position)
-            pos_mn = (len(position) - 1) if len(pos_mns) == 0 else pos_mns[0][0]
-        
-            # get the first minima of the last speed cluster before pos_min
-            spe_mns = clusters(-speed[:pos_mn])
-            return None if len(spe_mns) == 0 else time[spe_mns[-1][np.argmin(speed[spe_mns[-1]])]]
-    
-
-        def __get_to__(time, position, speed, acceleration):
-            """
-            This method serves the purpose of extracting the first toe-off.
-
-            Input:
-                time:           (1D ndarray)
-                                The time signal
-
-                position:       (1D ndarray)
-                                The position signal
-                
-                speed:          (1D ndarray)
-                                The speed signal
-
-                acceleration:   (1D ndarray)
-                                The acceleration signal
-
-            Output:
-                to:     (float)
-                        the time occurrence of the first identified toe-off in the signal.
-        
-            Procedure:
-                1)  Get the first local maxima in pos above half of the pos range.
-                2)  Get the highest last peak of the last cluster spot before 1).
-
-            Note:
-                To simplify and speed up the computation, the algorithm is designed to run on a
-                time-speed signal subsection starting from a mid-stance.
-            """
-
-            # look at the first peak in pos
-            pos_pks = clusters(position)
-            pos_pk = (len(position) - 1) if len(pos_pks) == 0 else pos_pks[0][0]
-        
-            # get the highest peak of the last cluster in speed occurring before pos_pk
-            spe_pks = clusters(speed[:pos_pk])
-            return None if len(spe_pks) == 0 else time[spe_pks[-1][np.argmax(speed[spe_pks[-1]])]]
-
-
-        # store the data
-        self.tw = tw                                                       # time-window (s)
-        self.n = n                                                         # the filter order
-        self.fc = fc                                                       # the filter cut-off frequency (hz)
-        self.fs = speed.sampling_frequency                                 # sampling frequency
-        self.th = None
-
-        # initialize the steps output
-        self.steps = []
-        last = -1
-
-        # start the simulation
-        time = speed.index.to_numpy()
-        ix_buf = np.argwhere((time >= 0) & (time <= self.tw)).flatten().tolist()
-        while last is not None and last < time[-1]:
-
-            # update the buffer index
-            ix_buf = np.unique(np.append(ix_buf[1:], [np.min([ix_buf[-1] + 1, len(time) - 1])]))
-
-            # check the gaitcycles list to see if a new search for new gait events should run
-            # since the speed data are filtered. A minimum length is required.
-            if len(ix_buf) <= 11:
-                last = None
-            elif time[ix_buf[0]] >= last:
-
-                # get the data in the buffer and filter the speed data
-                tm_buf = time[ix_buf]
-
-                # get the speed signal
-                sp_buf = speed.values.flatten()[ix_buf]
-
-                # get the filtered speed signal
-                spf_buf = butt_filt(sp_buf, self.fc, speed.sampling_frequency, self.n, plot=False)
-                
-                # get the acceleration data
-                ac_buf = (sp_buf[2:] - sp_buf[:-2]) / (tm_buf[2:] - tm_buf[:-2])
-
-                # get the position data
-                ps_buf = ss.detrend(si.cumtrapz(sp_buf, tm_buf))
-
-                # pair and scale all signals
-                tm_buf = tm_buf[1:-1]
-                sp_buf = self.__scale__(sp_buf[1:-1])
-                ps_buf = self.__scale__(ps_buf[1:])
-                ac_buf = self.__scale__(ac_buf)
-                
-                # apply __fs__
-                if last < 0:
-
-                    # ensure the signal starts from a peak
-                    t0 = clusters(sp_buf, 0.8)[0][0]
-                    tm_buf = tm_buf[t0:]
-                    ps_buf = ps_buf[t0:]
-                    sp_buf = sp_buf[t0:]
-                    ac_buf = ac_buf[t0:]
-
-                    # get the foot-strike
-                    fs0 = __get_fs__(tm_buf, ps_buf, sp_buf, ac_buf)
-                else:
-                    fs0 = self.steps[-1].landing
-
-                # apply __ms__
-                if fs0 is not None:
-                    ix = np.argwhere(tm_buf > fs0).flatten()
-                    ms = __get_ms__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
-                else:
-                    ms = None
-
-                # apply __to__
-                if ms is not None:
-                    ix = np.argwhere(tm_buf > ms).flatten()
-                    to = __get_to__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
-                else:
-                     to = None
-                
-                # apply __fs__ again
-                if to is not None:
-                    ix = np.argwhere(tm_buf > to).flatten()
-                    fs1 = __get_fs__(tm_buf[ix], ps_buf[ix], sp_buf[ix], ac_buf[ix])
-                else:
-                    fs1 = None
-                
-                # add the new step
-                if fs0 is not None and ms is not None and to is not None and fs1 is not None:
-                    self.steps += [Step(fs0, ms, to, fs1)]
-                    last = self.steps[-1].landing
-                else:
-                    last = None
-
-    
 
     def __add_steps__(self, fs, ms ,to):
         """
@@ -1635,7 +1294,7 @@ class RunningAnalysis():
     
 
 
-    def treadmill_new2_delays(self, speed_kmh):
+    def treadmill_delays(self, speed_kmh):
         """
         return the correction coefficients for the treadmill_new2 algorithm.
         
@@ -1654,52 +1313,3 @@ class RunningAnalysis():
             'toe_off': 0.05917 - 0.00393 * speed_kmh,
             'landing': 0.01835 + 0.00098 * speed_kmh
             }
-    
-
-
-    def isOutlier(self, step, update=True, n_std=1.):
-        """
-        check if "step" is an outlier.
-        
-        Input:
-            step:   (Step)
-                    a Step object
-            
-            update: (boolean)
-                    True if you wish to update the expected set of values stored within the current GaitAnalysis
-                    object.
-            
-            n_std:  (float)
-                    The number of standard deviations to be used as threshold for labelling step as "outlier" or
-                    "inlier".
-        
-        Output:
-            O:      (boolean)
-                    True if "step" is an outlier. False, otherwise.
-        
-        Procedure:
-            This method is designed to work with real-time acquisitions. The calculation starts from some starting
-            values for the biofeedback events and from mean and standard deviation of the squared distance
-            distribution calculated from empirical data. These values are used to label the actual step as "Inlier"
-            or "Outlier" according to how far its squared distance lies compared to the expected set of biofeedback
-            parameters.
-        """
-
-        # get the distance between step and the expected step
-        D = (step.contact_time - self.expected_avg.contact_time) ** 2
-        D += (step.propulsion_time - self.expected_avg.propulsion_time) ** 2
-        D += (step.flight_time - self.expected_avg.flight_time) ** 2
-
-        # label the current step
-        out = D > self.distance_mean + n_std * self.distance_std
-
-        # update
-        if update and not out:
-            N = len(self.steps) + 1
-            new_step = step - step.foot_strike
-            self.expected_avg = (self.expected_avg * N + new_step) / (N + 1)
-            self.distance_mean = (self.distance_mean * N + D) / (N + 1)
-            self.distance_std = (((self.distance_std ** 2) * N + (D - self.distance_mean) ** 2) / (N + 1)) ** 0.5
-
-        # return the decision
-        return out
