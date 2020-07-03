@@ -552,9 +552,9 @@ class Vector(pd.DataFrame):
         """
 
         # get a, b and c
-        a = (B - C)
-        b = (A - C)
-        c = (B - A)
+        a = (B - C).module
+        b = (A - C).module
+        c = (B - A).module
 
         # return the angle
         return ((a ** 2 + b ** 2 - c ** 2) / (2 * a * b).values).apply(np.arccos, 0)
