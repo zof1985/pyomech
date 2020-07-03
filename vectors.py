@@ -566,9 +566,9 @@ class Vector(pd.DataFrame):
         """
         Get the module of the vector.
         """
-        v = (self ** 2).sum(1).sqrt()
-        v.columns = ["|" + " + ".join(self.columns) + "|"]
-        return v
+        return Vector((self ** 2).sum(1).values.flatten() ** 0.5,
+                      index=self.index,
+                      columns=["|" + " + ".join(self.columns) + "|"])
      
 
 
