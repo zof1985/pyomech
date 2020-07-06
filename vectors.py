@@ -571,15 +571,15 @@ class Vector(pd.DataFrame):
             K:  (Vector)
                 A 1D vector containing the result of:
                                      2          2            2
-                           /  (B - C)  +  (A - C)  -  (A - B)  \
+                           /  (A - B)  +  (C - B)  -  (A - C)  \
                     arcos | ----------------------------------- |
-                           \      2 * (B - C) * (A - C)        /
+                           \      2 * (A - B) * (C - B)        /
         """
 
         # get a, b and c
-        a = (B - C).module
-        b = (A - C).module
-        c = (B - A).module
+        a = (A - B).module
+        b = (C - B).module
+        c = (A - C).module
 
         # return the angle
         return ((a ** 2 + b ** 2 - c ** 2) / (2 * a * b).values).apply(np.arccos, 0)
