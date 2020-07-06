@@ -283,8 +283,6 @@ class Vector(pd.DataFrame):
                     else:
                         complete.loc[miss_idx, v] = replacing_policy[v]
 
-                cubic_spline_interpolation()
-
         # get the replaced data
         replaced = complete.loc[miss_idx]
         
