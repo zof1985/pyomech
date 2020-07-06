@@ -152,7 +152,7 @@ class Vector(pd.DataFrame):
 
 
     def nanreplace(self, vectors={}, max_tr_data=1000, replacing_policy=None, plot=True, GridSearchKwargs={}, SVRKwargs={},
-                   SVRMode=False):
+                   SVRMode=True):
         '''
         Use Support Vector Regression (SVR) to provide the coordinates of the missing samples in the current vector.
 
