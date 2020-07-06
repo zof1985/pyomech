@@ -1213,7 +1213,7 @@ class VectorDict(dict):
         names = np.unique([i.split('.')[0] for i in V[2:] if len(i) > 0])
 
         # get the data values
-        values = np.vstack([np.atleast_2d(np.array(i)[:-1]) for i in lines[11:-2]]).astype(float)
+        values = np.vstack([np.atleast_2d(np.array(i)) for i in lines[11:-2]]).astype(float)
 
         # get the columns of interest
         cols = np.arange(np.argwhere(V == "Time").flatten()[0] + 1, len(V))
