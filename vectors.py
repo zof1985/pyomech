@@ -12,7 +12,6 @@ import os
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVR
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.interpolation import CubicSpline
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
