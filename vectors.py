@@ -12,6 +12,7 @@ import os
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVR
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.interpolation import CubicSpline
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
@@ -151,8 +152,8 @@ class Vector(pd.DataFrame):
 
 
 
-    def nanreplace(self, vectors, max_tr_data=1000, replacing_policy=None, plot=True,
-                   GridSearchKwargs={}, SVRKwargs={}):
+    def nanreplace(self, vectors={}, max_tr_data=1000, replacing_policy=None, plot=True, GridSearchKwargs={}, SVRKwargs={},
+                   SVRMode=False):
         '''
         Use Support Vector Regression (SVR) to provide the coordinates of the missing samples in the current vector.
 
@@ -172,6 +173,9 @@ class Vector(pd.DataFrame):
                 parameters passed to the scikit-learn GridSearchCV class.
             SVRKwargs:
                 other parameters passed to the SVR class.
+            SVRMode:    (boolean)
+                True means that SVR is used to estimate missing data.
+                Otherwise missing data are filled via Cubic Spline interpolation
 
         Output:
             complete: (Vector)
@@ -186,36 +190,8 @@ class Vector(pd.DataFrame):
             A tutorial on support vector regression. Statistics and Computing, 14(3), 199–222.
         '''
 
-        # prepare the SVR estimator options
-        opt_SVRKwargs = {
-            "kernel": "rbf",
-            "gamma": "scale",
-            "tol": 1e-5,
-            "epsilon": 5e-4,  # i.e. 0.5 mm error.
-            "max_iter": 1e4
-            }
-        opt_SVRKwargs.update(**SVRKwargs)
-
-        # prepare the GridSearchCV options
-        opt_GridSearchKwargs = {
-            "estimator": SVR(**opt_SVRKwargs),
-            "param_grid": {
-                "C": np.unique([i * (10 ** j) for i in np.arange(1, 11) for j in np.linspace(-10, -1, 10)])
-                },
-            "scoring": "neg_mean_absolute_error"
-            }
-        opt_GridSearchKwargs.update(**GridSearchKwargs)
-
         # get a copy of the current vector
         complete = self.copy()
-                       
-        # check the replacement policy
-        if replacing_policy is None:
-            replacing_policy = {i: None for i in self.columns}
-        else:
-            for i in self.columns:
-                if i not in np.array([j for j in replacing_policy]):
-                    replacing_policy[i] = None
 
         # get the missing values
         miss_idx = self.index[self.isna().any(1)].to_numpy()
@@ -223,44 +199,97 @@ class Vector(pd.DataFrame):
         # replace missing data
         if len(miss_idx) > 0:
 
-            # get the training dataset
-            x = pd.DataFrame()
-            for v in vectors:
-                v_pdf = vectors[v].loc[self.index]
-                v_pdf.columns = np.array(["_".join([v, i]) for i in vectors[v].columns])
-                x = pd.concat([x, v_pdf], axis=1, ignore_index=False)
+            # check the replacement policy
+            if replacing_policy is None:
+                replacing_policy = {i: None for i in self.columns}
+            else:
+                for i in self.columns:
+                    if i not in np.array([j for j in replacing_policy]):
+                        replacing_policy[i] = None
 
-            # exclude the features containing NaNs in the miss_idx data range
-            valid_features = x.columns[~(x.loc[miss_idx].isna().any(0))]
-            x = x[valid_features]
-
-            # exclude the sets containing missing data from the training sets,
-            # then get max_tr_data unique samples at random
-            valid_sets = x.index[(~x.isna().any(1) & ~x.index.isin(miss_idx))].to_numpy()
-            np.random.seed()
-            unique_sets = valid_sets[np.unique(x.loc[valid_sets].values, axis=0, return_index=True)[1]]
-            training_index = np.random.permutation(unique_sets)[:max_tr_data]
-            training_set = x.loc[training_index]
-
-            # grid searcher
-            grid = GridSearchCV(**opt_GridSearchKwargs)
-
-            # work on each vector dimensions separately
-            for i, v in enumerate(self.columns):
-                if replacing_policy[v] is None:
-                    
-                    # get the best estimator
-                    est = grid.fit(training_set.values, self.loc[training_index, v].values.flatten())
-
-                    # predict the missing samples using the trained model
-                    complete.loc[miss_idx, v] = est.best_estimator_.predict(x.loc[miss_idx].values)
+            # check which mode should be used
+            if SVRMode:
                 
-                # replace missing data with the replacing policy value
-                else:
-                    complete.loc[miss_idx, v] = replacing_policy[v]
-        
+                # SVR estimator options
+                opt_SVRKwargs = {
+                    "kernel": "rbf",
+                    "gamma": "scale",
+                    "tol": 1e-5,
+                    "epsilon": 5e-4,  # i.e. 0.5 mm error.
+                    "max_iter": 1e4
+                    }
+                opt_SVRKwargs.update(**SVRKwargs)
+
+                # prepare the GridSearchCV options
+                opt_GridSearchKwargs = {
+                    "estimator": SVR(**opt_SVRKwargs),
+                    "param_grid": {
+                        "C": np.unique([i * (10 ** j) for i in np.arange(1, 11) for j in np.linspace(-10, -1, 10)])
+                        },
+                    "scoring": "neg_mean_absolute_error"
+                    }
+                opt_GridSearchKwargs.update(**GridSearchKwargs)
+
+                # get the training dataset
+                x = pd.DataFrame()
+                for v in vectors:
+                    v_pdf = vectors[v].loc[self.index]
+                    v_pdf.columns = np.array(["_".join([v, i]) for i in vectors[v].columns])
+                    x = pd.concat([x, v_pdf], axis=1, ignore_index=False)
+
+                # exclude the features containing NaNs in the miss_idx data range
+                valid_features = x.columns[~(x.loc[miss_idx].isna().any(0))]
+                x = x[valid_features]
+
+                # exclude the sets containing missing data from the training sets,
+                # then get max_tr_data unique samples at random
+                valid_sets = x.index[(~x.isna().any(1) & ~x.index.isin(miss_idx))].to_numpy()
+                np.random.seed()
+                unique_sets = valid_sets[np.unique(x.loc[valid_sets].values, axis=0, return_index=True)[1]]
+                training_index = np.random.permutation(unique_sets)[:max_tr_data]
+                training_set = x.loc[training_index]
+
+                # grid searcher
+                grid = GridSearchCV(**opt_GridSearchKwargs)
+
+                # work on each vector dimensions separately
+                for i, v in enumerate(self.columns):
+                    if replacing_policy[v] is None:
+                        
+                        # get the best estimator
+                        est = grid.fit(training_set.values, self.loc[training_index, v].values.flatten())
+
+                        # predict the missing samples using the trained model
+                        complete.loc[miss_idx, v] = est.best_estimator_.predict(x.loc[miss_idx].values)
+                    
+                    # replace missing data with the replacing policy value
+                    else:
+                        complete.loc[miss_idx, v] = replacing_policy[v]
+
+            # Cubic Spline interpolation should be used
+            else:
+
+                # work on each vector dimensions separately
+                for i, v in enumerate(self.columns):
+                    if replacing_policy[v] is None:
+                        
+                        # get the list of complete datasets
+                        x_old = self.index[~self.isna().any(1)].to_numpy()
+                        x_new = complete.index.to_numpy()
+                        y_new = cubic_spline_interpolation(y=complete[v].values.flatten(),
+                                                           x_old=self.index[~self.isna().any(1)].to_numpy(),
+                                                           x_new=complete.index.to_numpy())
+                        complete.loc[miss_idx, v] = pd.DataFrame(y_new, index=x_new).loc[miss_idx].values.flatten()
+                    
+                    # replace missing data with the replacing policy value
+                    else:
+                        complete.loc[miss_idx, v] = replacing_policy[v]
+
+                cubic_spline_interpolation()
+
         # get the replaced data
         replaced = complete.loc[miss_idx]
+        
 
         # check if a plot has to be generated
         if not plot:
