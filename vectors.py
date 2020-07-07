@@ -1237,8 +1237,8 @@ class VectorDict(dict):
         # get the data names
         names = np.unique([i.split('.')[0] for i in V[2:] if len(i) > 0])
 
-        # get the data values
-        values = np.vstack([np.atleast_2d(np.array(i)) for i in lines[11:-2]]).astype(float)
+        # get the data values (now should work)
+        values = np.vstack([np.atleast_2d(i[:len(V)]) for i in lines[11:-2]]).astype(float)
 
         # get the columns of interest
         cols = np.arange(np.argwhere(V == "Time").flatten()[0] + 1, len(V))
@@ -1258,8 +1258,9 @@ class VectorDict(dict):
             D = [""] if len(D) == 1 else D
 
             # get the data for each dimension
-            K = {i if i != "" else v: values[rows, np.argwhere(V == v + (("." + i)
-                                                                if i != "" else "")).flatten()].flatten() for i in D}
+            K = {i if i != "" else v: values[rows,
+                                             np.argwhere(V == v + (("." + i)
+                                                         if i != "" else "")).flatten()].flatten() for i in D}
 
             # setup the output variable
             vd[v] = Vector(K, index=time, time_unit=time_unit, dim_unit=dim_unit, type=type)
