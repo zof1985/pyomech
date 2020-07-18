@@ -605,6 +605,14 @@ class Vector(pd.DataFrame):
                     the coordinates of the vector along the segment AB minimizing the CX length.
         """
 
+        # ensure all entered parameters are vectors
+        assert match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
+
+        # get the multiplier to be used for calculating the distance.
+        t = (A - C).dot(B - A) / ((B - A).module.values ** 2)
+
+        # get X
+        return A + (B - A) * t
 
 
     
@@ -625,26 +633,40 @@ class Vector(pd.DataFrame):
 
     
 
-    def __match__(self, B):
+    @staticmethod
+    def match(*args, **kwargs):
         """
-        check if B has same index and columns of self.
+        check if the entered objects are instance of Vector or pandas.DataFrame.
+        If more than one parameter is provided, check also that all the entered objects have the 
+        same columns and indices.
 
-        Input:
-            B:  (Object)
-                any object
-        
         Output:
             C:  (bool)
                 True if B is a Vector or a pandas.DataFrame with the same columns and index of self.
                 False, otherwise.
         """
 
-        if isinstance(B, (Vector, pd.DataFrame)):
-            col_check = np.all([i in self.columns.to_numpy() for i in B.columns.to_numpy()])
-            idx_check = np.all([i in self.index.to_numpy() for i in B.index.to_numpy()])
-            shp_check = np.all([i == j for i, j in zip(self.shape, B.shape)])
-            return col_check & idx_check & shp_check
-        return False
+        # get the elements entered
+        objs = [i for i in args] + [kwargs[i] for i in kwargs]
+
+        # check if all elements are instance of Vector or DataFrame
+        for obj in objs:
+            if not isinstance(obj, (Vector, pd.DataFrame)):
+                return False
+        
+        # check the columns and index of all objs
+        IX = objs[0].index.to_numpy()
+        CL = objs[0].columns.to_numpy()
+        SH = objs[0].shape
+        for obj in objs:
+            OI = obj.index.to_numpy()
+            OC = obj.columns.to_numpy()
+            col_check = np.all([i in OC for i in CL])
+            idx_check = np.all([i in OI for i in IX])
+            shp_check = np.all([i == j for i, j in zip(obj.shape, SH)])
+            if not np.all([col_check, idx_check, shp_check]):
+                return False
+        return True
 
 
 
@@ -662,7 +684,7 @@ class Vector(pd.DataFrame):
         """
 
         # handle the case B is a pandas.DataFrame or a Vector with the same dimensions of self
-        if self.__match__(B):
+        if match(self, B):
             new_column = " + ".join(self.columns.to_numpy())
             values = [i.dot(j.T) for i, j in zip(self.values, B.values)]
             return Vector(values, index=self.index, columns=[new_column]).__finalize__(self)
