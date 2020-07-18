@@ -15,8 +15,8 @@ from sklearn.exceptions import ConvergenceWarning
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
-from .utils import *
-from .processing import *
+from utils import *
+from processing import *
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
@@ -585,6 +585,28 @@ class Vector(pd.DataFrame):
         return ((a ** 2 + b ** 2 - c ** 2) / (2 * a * b).values).apply(np.arccos, 0)
 
 
+
+    @staticmethod
+    def intersect(A, B, C):
+        """
+        return the Vector X such as the segment CX will have minimum distance to the segment AB. 
+        
+        Input:
+            A, B:   (Vector)
+                    coordinates of the vectors defining the segment from which minimum distance
+                    has to be calculated. 
+            
+            C:      (Vector)
+                    the coordinates of the point from which minimum distance to the segment AB
+                    has to be calculated.
+        
+        Output:
+            X:      (Vector)
+                    the coordinates of the vector along the segment AB minimizing the CX length.
+        """
+
+
+
     
     @property
     def module(self):
@@ -601,92 +623,53 @@ class Vector(pd.DataFrame):
     def sampling_frequency(self):
         return 1. / np.mean(np.diff(self.index.to_numpy()))
 
-
-
-    # SUBCLASSED METHODS
-
-
     
-    def __init__(self, *args, **kwargs):
+
+    def __match__(self, B):
+        """
+        check if B has same index and columns of self.
+
+        Input:
+            B:  (Object)
+                any object
         
-        # remove special class objects
-        props = {}
-        for prop in self._metadata:
-            try:
-                props[prop] = kwargs.pop(prop)
-            except Exception:
-                pass
+        Output:
+            C:  (bool)
+                True if B is a Vector or a pandas.DataFrame with the same columns and index of self.
+                False, otherwise.
+        """
+
+        if isinstance(B, (Vector, pd.DataFrame)):
+            col_check = np.all([i in self.columns.to_numpy() for i in B.columns.to_numpy()])
+            idx_check = np.all([i in self.index.to_numpy() for i in B.index.to_numpy()])
+            shp_check = np.all([i == j for i, j in zip(self.shape, B.shape)])
+            return col_check & idx_check & shp_check
+        return False
+
+
+
+    def dot(self, B):
+        """
+        return a vector being the dot product between self and B.
         
-        # handle Series props
-        ser_props = {}
-        for prop in ["name", "fastpath"]:
-            try:
-                ser_props[prop] = kwargs.pop(prop)
-            except Exception:
-                pass
-
-        # generate the pandas object
-        if len(ser_props) > 0:
-            super(Vector, self).__init__(pd.Series(*args, **ser_props))
-        else:
-            super(Vector, self).__init__(*args, **kwargs)
+        Input:
+            B:  (Vector, numpy.ndarray, pandas.DataFrame)
+                the object to be multiplied with.
         
-        # add the extra features
-        for prop in props:
-            setattr(self, prop, props[prop])
+        Output:
+            D:  (Vector)
+                the dot product of self with B.
+        """
 
+        # handle the case B is a pandas.DataFrame or a Vector with the same dimensions of self
+        if self.__match__(B):
+            new_column = " + ".join(self.columns.to_numpy())
+            values = [i.dot(j.T) for i, j in zip(self.values, B.values)]
+            return Vector(values, index=self.index, columns=[new_column]).__finalize__(self)
+        
+        # use standard pandas dot
+        return super(Vector, self).dot(B).__finalize__(self)
 
-
-    def __finalize__(self, other, method=None, **kwargs):
-        """propagate metadata from other to self """
-
-        # merge operation: using metadata of the left object
-        if method == "merge":
-            for name in self._metadata:
-                object.__setattr__(self, name, getattr(other.left, name, getattr(self, name)))
-
-        # concat operation: using metadata of the first object
-        elif method == "concat":
-            for name in self._metadata:
-                object.__setattr__(self, name, getattr(other.objs[0], name, getattr(self, name)))
-
-        # any other condition
-        else:
-            for name in self._metadata:
-                object.__setattr__(self, name, getattr(other, name, getattr(self, name)))
-        return self
-
-
-
-    @property
-    def _constructor(self):
-        return Vector
-
-
-
-    @property
-    def _constructor_sliced(self):
-        return Vector
-
-
-
-    @property
-    def _constructor_expanddim(self):
-        return Vector
-
-
-
-    def __str__(self):
-        out = pd.DataFrame(self)
-        return out.__str__() + "\n".join(["\nAttributes:", "\ttype:\t\t" + self.type,
-                                          "\ttime_unit:\t" + self.time_unit,
-                                          "\tdim_unit:\t" + self.dim_unit])
-
-
-
-    def __repr__(self):
-        return self.__str__()
-    
 
 
     @staticmethod
@@ -862,6 +845,92 @@ class Vector(pd.DataFrame):
         """
         
         to_excel(file, self.to_df(), sheet, new_file)
+
+
+
+    # SUBCLASSED METHODS
+
+
+    
+    def __init__(self, *args, **kwargs):
+        
+        # remove special class objects
+        props = {}
+        for prop in self._metadata:
+            try:
+                props[prop] = kwargs.pop(prop)
+            except Exception:
+                pass
+        
+        # handle Series props
+        ser_props = {}
+        for prop in ["name", "fastpath"]:
+            try:
+                ser_props[prop] = kwargs.pop(prop)
+            except Exception:
+                pass
+
+        # generate the pandas object
+        if len(ser_props) > 0:
+            super(Vector, self).__init__(pd.Series(*args, **ser_props))
+        else:
+            super(Vector, self).__init__(*args, **kwargs)
+        
+        # add the extra features
+        for prop in props:
+            setattr(self, prop, props[prop])
+
+
+
+    def __finalize__(self, other, method=None, **kwargs):
+        """propagate metadata from other to self """
+
+        # merge operation: using metadata of the left object
+        if method == "merge":
+            for name in self._metadata:
+                object.__setattr__(self, name, getattr(other.left, name, getattr(self, name)))
+
+        # concat operation: using metadata of the first object
+        elif method == "concat":
+            for name in self._metadata:
+                object.__setattr__(self, name, getattr(other.objs[0], name, getattr(self, name)))
+
+        # any other condition
+        else:
+            for name in self._metadata:
+                object.__setattr__(self, name, getattr(other, name, getattr(self, name)))
+        return self
+
+
+
+    @property
+    def _constructor(self):
+        return Vector
+
+
+
+    @property
+    def _constructor_sliced(self):
+        return Vector
+
+
+
+    @property
+    def _constructor_expanddim(self):
+        return Vector
+
+
+
+    def __str__(self):
+        out = pd.DataFrame(self)
+        return out.__str__() + "\n".join(["\nAttributes:", "\ttype:\t\t" + self.type,
+                                          "\ttime_unit:\t" + self.time_unit,
+                                          "\tdim_unit:\t" + self.dim_unit])
+
+
+
+    def __repr__(self):
+        return self.__str__()
 
 
 
