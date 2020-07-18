@@ -555,7 +555,7 @@ class Vector(pd.DataFrame):
     @staticmethod
     def angle(A, B, C):
         """
-        return the angle ABC using the Carnot theorem.
+        return the angle ABC using the Cosine theorem.
 
         Input:
             A:  (Vector)
@@ -576,6 +576,9 @@ class Vector(pd.DataFrame):
                            \      2 * (A - B) * (C - B)        /
         """
 
+        # ensure all entered parameters are vectors
+        assert match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
+
         # get a, b and c
         a = (A - B).module
         b = (C - B).module
@@ -587,7 +590,7 @@ class Vector(pd.DataFrame):
 
 
     @staticmethod
-    def intersect(A, B, C):
+    def intercept(A, B, C):
         """
         return the Vector X such as the segment CX will have minimum distance to the segment AB. 
         
