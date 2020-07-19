@@ -655,9 +655,10 @@ class Vector(pd.DataFrame):
         A.dim_unit = "rad"
         A.type = "Angle"
         cols = self.columns.to_numpy()
+        T = self / self.module.values
         for dim in cols:
-            y = self[[i for i in cols if i != dim]].module.values.flatten()
-            x = self[dim].values.flatten()
+            y = T[[i for i in cols if i != dim]].module.values.flatten()
+            x = T[dim].values.flatten()
             a = np.arctan2(y, x)
             neg = np.argwhere(a < 0).flatten()
             a[neg] = a[neg] + 2 * np.pi
