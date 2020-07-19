@@ -697,6 +697,29 @@ class Vector(pd.DataFrame):
 
 
 
+    def cross(self, B):
+        """
+        return a vector being the cross product between self and B.
+        
+        Input:
+            B:  (Vector, numpy.ndarray, pandas.DataFrame)
+                the object to be multiplied with.
+        
+        Output:
+            D:  (Vector)
+                the cross product of self with B.
+        """
+
+        # handle the case B is a pandas.DataFrame or a Vector with the same dimensions of self
+        if match(self, B):
+            values = np.atleast_2d([np.cross(i, j) for i, j in zip(self.values, B.values)])
+            return Vector(values, index=self.index, columns=self.columns).__finalize__(self)
+        
+        # use standard pandas dot
+        return super(Vector, self).dot(B).__finalize__(self)
+
+
+
     @staticmethod
     def read_csv(*args, **kwargs):
         """
