@@ -123,11 +123,10 @@ class Vector(pd.DataFrame):
                 Hoboken, New Jersey: John Wiley & Sons Inc; 2009.
         '''
         x = np.atleast_2d(self.index.to_numpy()).T
-        y = self.values
-        d1 = (y[2:, :] - y[:-2, :]) / (x[2:, :] - x[:-2, :])
-        dim_unit = self.dim_unit + ' * ' + self.time_unit + "^-1"
-        return Vector(d1, index=x.flatten()[1:-1], time_unit=self.time_unit, dim_unit=dim_unit, type=self.type,
-                      columns=self.columns)
+        d1 = (self.loc[x[2:, 0]] - self.loc[x[:-2, 0]]) / (x[2:, :] - x[:-2, :])
+        d1.dim_unit = self.dim_unit + ' * ' + self.time_unit + "^-1"
+        d1.type = "First derivative"
+        return d1
     
 
 
