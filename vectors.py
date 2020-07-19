@@ -632,7 +632,37 @@ class Vector(pd.DataFrame):
 
     @property
     def sampling_frequency(self):
+        """
+        get the mean sampling frequency of the Vector in Hz.
+        """
         return 1. / np.mean(np.diff(self.index.to_numpy()))
+
+
+
+    @property
+    def angles(self):
+        """
+        get the angles (in radians) defining the Vector around each of its axes.
+        """
+        
+        # if self has only one dimension, there are no angles
+        if self.shape[1] == 1:
+            return None
+        
+        # for each axis get the module of the vector excluding the actual axis and
+        # then obtain the angle
+        A = self.copy()
+        A.dim_unit = "rad"
+        A.type = "Angle"
+        cols = self.columns.to_numpy()
+        for dim in cols:
+            y = self[[i for i in cols if i != dim]].module.values.flatten()
+            x = self[dim].values.flatten()
+            a = np.arctan2(y, x)
+            neg = np.argwhere(a < 0).flatten()
+            a[neg] = a[neg] + 2 * np.pi
+            A.loc[A.index, dim] = a
+        return A
 
     
 
