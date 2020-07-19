@@ -15,8 +15,8 @@ from sklearn.exceptions import ConvergenceWarning
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
-from utils import *
-from processing import *
+from .utils import *
+from .processing import *
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
@@ -1403,3 +1403,115 @@ class VectorDict(dict):
     def __setattr__(self, *args, **kwargs):
         super(VectorDict, self).__setattr__(*args, **kwargs)
         self.__finalize__
+    
+
+
+# Reference Frame
+class ReferenceFrame():
+
+    
+    def __init__(self, origin, versors):
+        """
+        Create a ReferenceFrame instance.
+
+        Input:
+            origin:     (dict)
+                        the coordinates of the origin of a "local" ReferenceFrame. Each key must have
+                        a numeric value.
+            
+            versors:    (list)
+                        a list of len equal to the number of keys of origin. Each dict must have same
+                        keys of origin with one numeric value per key.
+        """
+
+        # check the origin
+        assert isinstance(origin, dict), "'origin' must be a dict."
+        
+        # check each versor
+        assert len(versors) == len(origin), str(len(origin)) + " versors are reuqired."
+        dims = np.array([i for i in origin])
+        V = []
+        for versor in versors:
+            assert np.all([j in dims for j in versor]), "all versors must have keys: " + str(dims)
+            vec = Vector(versor, index=[0], type="versor", dim_unit="", time_unit="")
+            V += [vec / vec.module.values]
+
+        # store the data
+        self.origin = origin
+        self.versors = V
+
+        # calculate the rotation matrix
+        self._to_local = np.linalg.inv(np.vstack([i.values for i in V]))
+        self._to_global = np.linalg.inv(self._to_local)
+
+
+    def _build_origin(self, vector):
+        """
+        Internal method used to build a Vector with the same index of "vector" containing the
+        origin coordinates.
+
+        Input:
+            vector: (pyomech.Vector)
+                    the vector used to mimimc the shape of the output orgin vector.
+        
+        Output:
+            O:      (pyomech.Vector)
+                    the vector representing the origin at each index of vector.
+        """
+
+        # ensure vector is a vector
+        assert Vector.match(vector), "'vector' must be an instance of pyomech.Vector."
+
+        # build O
+        O = {i: np.tile(self.origin[i], vector.shape[0]) for i in self.origin}
+        return Vector(O, index=vector.index, time_unit=vector.time_unit, dim_unit=vector.dim_unit,
+                      type="Coordinates")
+
+
+    def to_local(self, vector):
+        """
+        Rotate "vector" from the current "global" ReferenceFrame to the "local" ReferenceFrame
+        defined by the current instance of this class.
+
+        Input:
+            vector: (pyomech.Vector)
+                    the vector to be aligned.
+        
+        Output:
+            v_loc:  (pyomech.Vector)
+                    the same vector with coordinates aligned to the current "local" ReferenceFrame.
+        """
+
+        # ensure vector can be converted
+        O = self._build_origin(vector)
+        assert Vector.match(O, vector), "'vector' cannot be aligned to the local ReferenceFrame."
+
+        # rotate vector
+        V = vector - O
+        for t in V.index.to_numpy():
+            V.loc[t] = V.loc[t].dot(self.to_local)
+        return V
+    
+
+    def to_global(self, vector):
+        """
+        Rotate "vector" from the current "local" ReferenceFrame to the "global" ReferenceFrame.
+
+        Input:
+            vector: (pyomech.Vector)
+                    the vector to be aligned.
+        
+        Output:
+            v_glo:  (pyomech.Vector)
+                    the same vector with coordinates aligned to the "global" ReferenceFrame.
+        """
+        
+        # ensure vector can be converted
+        O = self._build_origin(vector)
+        assert Vector.match(O, vector), "'vector' cannot be aligned to the local ReferenceFrame."
+
+        # rotate vector
+        V = vector.copy()
+        for t in V.index.to_numpy():
+            V.loc[t] = V.loc[t].dot(self.to_global)
+        return V + O
