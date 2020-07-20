@@ -12,6 +12,7 @@ import os
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVR
 from sklearn.exceptions import ConvergenceWarning
+from scipy.integrate import CubicSpline
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
@@ -72,14 +73,14 @@ class Vector(pd.DataFrame):
         for i, v in enumerate(self.columns):
             if plot:
                 V.loc[V.index, v], ps = cubic_spline_interpolation(y=self[v].values.flatten(),
-                                                                      x_old=self.index_to_numpy(),
-                                                                      x_new=x, plot=plot)
+                                                                   x_old=self.index_to_numpy(),
+                                                                   x_new=x, plot=plot)
                 plots[v] = ps
 
             else:
                 V.loc[V.index, v] = cubic_spline_interpolation(y=self[v].values.flatten(),
-                                                                  x_old=self.index.to_numpy(),
-                                                                  x_new=x, plot=plot)
+                                                               x_old=self.index.to_numpy(),
+                                                               x_new=x, plot=plot)
 
         # return the data
         if not plot:
@@ -146,7 +147,7 @@ class Vector(pd.DataFrame):
         dt = (t[2:] - t[:-2]) * 0.5
         d2.loc[0:] = dv / dt
         d2.dim_unit = d2.dim_unit + ' * ' + d2.time_unit + "^-2"
-        return d2
+        return d2       
 
 
 
