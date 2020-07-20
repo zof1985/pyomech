@@ -658,8 +658,10 @@ class Vector(pd.DataFrame):
         T = self / self.module.values
         for dim in cols:
             y = T[[i for i in cols if i != dim]].module.values.flatten()
+            s = np.vstack([np.atleast_2d(np.sign(T[i].values.flatten())) for i in T]).T
+            sy = np.prod(s, axis=1) * y
             x = T[dim].values.flatten()
-            a = np.arctan2(y, x)
+            a = np.arctan2(sy, x)
             neg = np.argwhere(a < 0).flatten()
             a[neg] = a[neg] + 2 * np.pi
             A.loc[A.index, dim] = a
