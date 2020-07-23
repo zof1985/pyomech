@@ -807,7 +807,8 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
                         method.
 
     Output:
-        a numpy array with the location of the crossing points
+        a numpy array with the location of the crossing points.
+        if plot is True, also a bokeh figure containing a graphical visualization of the outcomes.
     """
 
     # get the sign of the signal without the offset
@@ -876,31 +877,47 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
     return xcr, p
 
 
-'''
-def xcorr(X, c_type='unbiased', return_negative=False):
+
+def xcorr(X, biased=False, full=False, plot=False):
     """
-    set the cross correlation of the data in X
+    set the cross correlation of the data in X.
 
     Input:
-                     X : (P x N numpy array)
-                         P = the number of variables
-                         N = the number of samples
+        X : (P x N numpy array)
+            P = the number of variables
+            N = the number of samples.
+            Please note that if P = 1 the autocorrelation of the signal is returned.
+            If P = 2, standard cross-correlation is provided.
+            If P > 2, multiple cross-correlation is returned. Multiple cross-correlation
+            corresponds to the mean of the cross-correlation obtained at each time lag
+            comparing all the signals to each other.
 
-                c_type : str
-                         {'biased', 'unbiased'}
+        biased: (bool)
+                if True, the biased cross-correlation is provided. Otherwise, the 'unbiased'
+                estimator is returned.
 
-        return_negative: bool
-                         Should the negative lags be reported?
+        full:   (bool)
+                Should the negative lags be reported?
+        
+        plot:   (bool)
+                if True a figure is returned in addition to the crossings reflecting
+                the output of this method.
 
-    Note:
-        if X is a 1 x N array or an N length 1-D array, the autocorrelation is
-        provided.
+    Output:
+        xc:     (1D array)
+                the cross-correlation value.
+        
+        lags:   (1D array)
+                the lags in sample units.
+        
+        F:      (bokeh.Figure)
+                if plot = True, F will be a bokeh figure containing a graphical visualization
+                of the outcomes. Otherwise F is not returned.
     """
-    import numpy as np
-    from scipy.signal import fftconvolve as fftxcorr
 
     # ensure the shape of X
     X = np.atleast_2d(X)
+    Q = X.shape[0]
 
     # take the autocorrelation if X is a 1-d signal
     if X.shape[0] == 1:
@@ -914,12 +931,7 @@ def xcorr(X, c_type='unbiased', return_negative=False):
     xc = []
     for i in np.arange(P - 1):
         for j in np.arange(i + 1, P):
-
-            # FFT convolution
-            R = fftxcorr(V[i], V[j][::-1], "full")
-
-            # store the value
-            R = np.atleast_2d(R)
+            R = np.atleast_2d(ss.fftconvolve(V[i], V[j][::-1], "full"))
             xc = np.vstack((xc, R)) if len(xc) > 0 else np.copy(R)
 
     # average over all the multiples
@@ -927,20 +939,44 @@ def xcorr(X, c_type='unbiased', return_negative=False):
 
     # adjust the output
     lags = np.arange(-(N - 1), N)
-    if not return_negative:
+    if not full:
         xc = xc[(N - 1):]
         lags = lags[(N - 1):]
 
     # normalize
-    if c_type == 'unbiased':
-        xc /= (N + 1 - abs(lags))
-    elif c_type == 'biased':
-        xc /= (N + 1)
-    else:
-        st = 'The "c_type" parameter was not correctly specified. The "biased"'
-        st += ' estimator has been used'
-        print(st)
-        xc /= (N + 1)
-    return xc, lags
+    xc /= (N + 1 - abs(lags)) if not biased else (N + 1)
+    
+    # return only the cross-correlation data
+    if not plot:
+        return xc, lags
 
-'''
+    # generate the cross-correlation figure
+    p = figure(width=fig_size, height=fig_size, toolbar_location="right")
+    
+    # edit the axes labels
+    p.xaxis.axis_label = "Lags (#)"
+    if Q == 1:
+        name = "Autocorrelation"
+    elif Q == 2:
+        name = "Crosscorrelation"
+    else:
+        name = "Multiple crosscorrelation"
+    p.yaxis.axis_label = name
+    p.title.text = name
+
+    # plot the outcomes
+    src = ColumnDataSource(data={'x': lags, 'y': xc})
+    p.scatter('x', 'y', source=src, size=4, color="navy", alpha=0.5, marker="circle")
+    p.line('x', 'y', source=src, line_width=2, color="navy", alpha=0.5, line_dash=(3, 3))
+    
+    # edit the grids
+    p.xgrid.grid_line_alpha=0.3
+    p.ygrid.grid_line_alpha=0.3
+    p.xgrid.grid_line_dash=[5, 5]
+    p.ygrid.grid_line_dash=[5, 5]
+    
+    # add the hover tool
+    p.add_tool(HoverTool(tooltips=[('Lag', '@x samples'), (name, '@y')]))
+    
+    # return the outcomes
+    return xc, lags, p    
