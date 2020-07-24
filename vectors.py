@@ -248,7 +248,7 @@ class Vector(pd.DataFrame):
                 valid_sets = x.index[(~x.isna().any(1) & ~x.index.isin(miss_idx))].to_numpy()
                 np.random.seed()
                 unique_sets = valid_sets[np.unique(x.loc[valid_sets].values, axis=0, return_index=True)[1]]
-                training_index = np.random.permutation(unique_sets)[:max_tr_data]
+                training_index = np.sort(np.random.permutation(unique_sets)[:max_tr_data])
                 training_set = x.loc[training_index]
 
                 # grid searcher
