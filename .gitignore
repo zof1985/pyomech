@@ -8,3 +8,9 @@
 /__pycache__
 *.pyc
 *.json
+__pycache__/__init__.cpython-38.pyc
+__pycache__/regression.cpython-38.pyc
+__pycache__/utils.cpython-38.pyc
+__pycache__/__init__.cpython-38.pyc
+__pycache__/regression.cpython-38.pyc
+__pycache__/utils.cpython-38.pyc

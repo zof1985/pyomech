@@ -208,6 +208,9 @@ class Vector(pd.DataFrame):
 
             # check which mode should be used
             if SVRMode:
+
+                # ensure vectors have been provided
+                assert len(vectors) > 0, "'vectors' must be provided if SVRMode = True"
                 
                 # SVR estimator options
                 opt_SVRKwargs = {
