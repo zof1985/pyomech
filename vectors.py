@@ -929,6 +929,14 @@ class Vector(pd.DataFrame):
         """
         
         to_excel(file, self.to_df(), sheet, new_file)
+    
+
+
+    def mean(self, *args, **kwargs):
+        """
+        get the mean of the vector
+        """
+        return super(Vector, self).mean(*args, **kwargs).__finalize__(self)
 
 
 
