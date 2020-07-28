@@ -65,22 +65,24 @@ class Vector(pd.DataFrame):
         if x is None:
             x = np.linspace(self.index.to_numpy()[0], self.index.to_numpy()[-1], n)
         
-        # get a copy of self
-        V = self.loc[x]
-
         # apply the pyomech.processing.winter_residuals method to each dimension of the Vector
         plots = {}
+        V = {}
         for i, v in enumerate(self.columns):
             if plot:
-                V.loc[V.index, v], ps = cubic_spline_interpolation(y=self[v].values.flatten(),
-                                                                   x_old=self.index_to_numpy(),
-                                                                   x_new=x, plot=plot)
+                K, ps = cubic_spline_interpolation(y=self[v].values.flatten(),
+                                                   x_old=self.index_to_numpy(),
+                                                   x_new=x, plot=plot)
                 plots[v] = ps
 
             else:
-                V.loc[V.index, v] = cubic_spline_interpolation(y=self[v].values.flatten(),
-                                                               x_old=self.index.to_numpy(),
-                                                               x_new=x, plot=plot)
+                K = cubic_spline_interpolation(y=self[v].values.flatten(),
+                                               x_old=self.index.to_numpy(),
+                                               x_new=x, plot=plot)
+            V[v] = K
+
+        # get the interpolated vector
+        V = Vector(V, index=x, time_unit=self.time_unit, dim_unit=self.dim_unit, type=self.type)
 
         # return the data
         if not plot:
