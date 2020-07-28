@@ -123,10 +123,10 @@ class Vector(pd.DataFrame):
                 Biomechanics and Motor Control of Human Movement. Fourth Ed.
                 Hoboken, New Jersey: John Wiley & Sons Inc; 2009.
         '''
-        x = np.hstack([np.atleast_2d(self.index.to_numpy()).T for i in self])
+        x = np.hstack([np.atleast_2d(self.index.to_numpy().flatten()).T for i in self])
         y = self.values
         return Vector(
-            data=(y[2:, 0] - y[:-2, 0]) / (x[2:, :] - x[:-2, :]),
+            data=(y[2:, :] - y[:-2, :]) / (x[2:, :] - x[:-2, :]),
             index=self.index.to_numpy()[1:-1],
             time_unit=self.time_unit,
             dim_unit=self.dim_unit + ' * ' + self.time_unit + "^-1",
