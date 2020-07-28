@@ -125,7 +125,7 @@ class Vector(pd.DataFrame):
         '''
         x = np.hstack([np.atleast_2d(self.index.to_numpy()).T for i in self])
         y = self.values
-        return pv.Vector(
+        return Vector(
             data=(y[2:, 0] - y[:-2, 0]) / (x[2:, :] - x[:-2, :]),
             index=self.index.to_numpy()[1:-1],
             time_unit=self.time_unit,
@@ -148,7 +148,7 @@ class Vector(pd.DataFrame):
         x = self.values
         dv = (x[2:] - x[1:-1]) / (t[2:] - t[1:-1]) - (x[1:-1] - x[:-2]) / (t[1:-1] - t[:-2])
         dt = (t[2:] - t[:-2]) * 0.5
-        return pv.Vector(
+        return Vector(
             data=dv / dt,
             index=self.index.to_numpy()[1:-1],
             time_unit=self.time_unit,
