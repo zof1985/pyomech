@@ -580,7 +580,7 @@ class Vector(pd.DataFrame):
         """
 
         # ensure all entered parameters are vectors
-        assert match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
+        assert Vector.match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
 
         # get a, b and c
         a = (A - B).module
@@ -612,7 +612,7 @@ class Vector(pd.DataFrame):
         """
 
         # ensure all entered parameters are vectors
-        assert match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
+        assert Vector.match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
 
         # get the multiplier to be used for calculating the distance.
         t = (A - C).dot(B - A) / ((B - A).module.values ** 2)
@@ -747,7 +747,7 @@ class Vector(pd.DataFrame):
         """
 
         # handle the case B is a pandas.DataFrame or a Vector with the same dimensions of self
-        if match(self, B):
+        if Vector.match(self, B):
             values = np.atleast_2d([np.cross(i, j) for i, j in zip(self.values, B.values)])
             return Vector(values, index=self.index, columns=self.columns).__finalize__(self)
         
