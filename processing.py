@@ -18,11 +18,96 @@ from bokeh.models import *
 
 
 # GENERAL OPTIONS
+
+
+
 fig_size = 300  # pixels
 
 
 
 # METHODS
+
+
+
+def pad_mirror(x, before=0, after=0, axis=0, plot=False):
+    """
+    pad the signal mirroring its ends.
+
+    Input:
+        x:          (ndarray)
+                    the signal to be padded
+        
+        before:     (int)
+                    the number of padding values to be added before x
+        
+        after:      (int)
+                    the number of padding values to be added after x
+        
+        axis:       (int)
+                    the axis along with x has to be padded
+
+        plot:       (bool)
+                    if True, a bokeh figure is returned in addition to the padded signal.
+
+    Output:
+        z:          (ndarray)
+                    the padded x
+
+        f:          (bokeh.Figure)
+                    a bokeh.Figure object representing the padding action.
+    """
+
+    # get the inverse
+    inv = np.flip(x, axis=axis)
+    n = x.shape[axis]
+    assert before <= n, "before cannot be higher than " + str(n)
+    assert after <= n, "after cannot be higher than " + str(n)
+
+    # get the padded before
+    b_pad = inv[(n-before-1):-1]
+
+    # get the padded after
+    a_pad = inv[1: (after + 1)]
+    
+    # concatenate the signal
+    z = np.concatenate([b_pad, x, a_pad], axis=axis)
+
+    # return the signal if plot is false
+    if not plot or z.ndim > 1:
+        return z
+    
+    # generate the output plot figure
+    p = figure(width=fig_size, height=fig_size, title="Padding")
+                
+    # edit the axes labels
+    p.xaxis.axis_label = "Samples (#)"
+    p.yaxis.axis_label = "Y"
+
+    # plot the pad before
+    b_x = np.arange(len(b_pad))
+    p.scatter(b_x, b_pad, size=1, color="darkred", alpha=0.5, marker="circle", legend_label="Before")
+    
+    # plot x
+    x_x = np.arange(len(x)) + len(b_pad)
+    p.scatter(x_x, x, size=1, color="navy", alpha=0.5, marker="circle", legend_label="X")
+
+    # plot after
+    a_x = np.arange(len(a_pad)) + len(b_pad) + len(x)
+    p.scatter(x_x, a_pad, size=1, color="darkgreen", alpha=0.5, marker="circle", legend_label="After")
+    
+    # set the legend position
+    p.legend.location = "top_right"
+    p.legend.title = "Legend"
+    p.legend.click_policy = "hide"
+    
+    # edit the grids
+    p.xgrid.grid_line_alpha=0.3
+    p.ygrid.grid_line_alpha=0.3
+    p.xgrid.grid_line_dash=[5, 5]
+    p.ygrid.grid_line_dash=[5, 5]
+    
+    # return all
+    return z, p
 
 
 
@@ -71,7 +156,6 @@ def digitize(x, rule="fd"):
     for i in (np.arange(n) + 1):
         d[np.argwhere((x >= (i - 1) * w) & (x < i * w)).flatten()] = i - 1
     return d
-
 
 
 
@@ -134,7 +218,7 @@ def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=False):
 
         # assuming that left_pad and right_pad equal 2 and 3 respectively, we want:
         #           y = [ABCDEFGHI]     -->       y_padded = [CB] [ABCDEFGHI] [HGF]
-        y_pad = np.concatenate([y[1:(left_pad + 1)][::-1], y, y[-(right_pad + 1):-1][::-1]]).flatten()
+        y_pad = pad_mirror(y, before=left_pad, after=right_pad, plot=False)
 
     # to reduce the computation time rather than calculating the mean value corresponding to each sample of the output
     # signal, we calculate the filter from the cumulative sum. This greatly reduces the number of operations, thus the
