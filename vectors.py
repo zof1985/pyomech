@@ -123,11 +123,15 @@ class Vector(pd.DataFrame):
                 Biomechanics and Motor Control of Human Movement. Fourth Ed.
                 Hoboken, New Jersey: John Wiley & Sons Inc; 2009.
         '''
-        x = np.atleast_2d(self.index.to_numpy()).T
-        d1 = (self.loc[x[2:, 0]] - self.loc[x[:-2, 0]]) / (x[2:, :] - x[:-2, :])
-        d1.dim_unit = self.dim_unit + ' * ' + self.time_unit + "^-1"
-        d1.type = "First derivative"
-        return d1
+        x = np.hstack([np.atleast_2d(self.index.to_numpy()).T for i in self])
+        y = self.values
+        return pv.Vector(
+            data=(y[2:, 0] - y[:-2, 0]) / (x[2:, :] - x[:-2, :]),
+            index=self.index.to_numpy()[1:-1],
+            time_unit=self.time_unit,
+            dim_unit=self.dim_unit + ' * ' + self.time_unit + "^-1",
+            type="First derivative"
+        )
     
 
 
@@ -140,14 +144,17 @@ class Vector(pd.DataFrame):
                 Biomechanics and Motor Control of Human Movement. Fourth Ed.
                 Hoboken, New Jersey: John Wiley & Sons Inc; 2009.
         '''
-        d2 = self.loc[1:-1]
         t = np.vstack(np.atleast_2d([self.index.to_numpy() for i in self.columns])).T
         x = self.values
         dv = (x[2:] - x[1:-1]) / (t[2:] - t[1:-1]) - (x[1:-1] - x[:-2]) / (t[1:-1] - t[:-2])
         dt = (t[2:] - t[:-2]) * 0.5
-        d2.loc[0:] = dv / dt
-        d2.dim_unit = d2.dim_unit + ' * ' + d2.time_unit + "^-2"
-        return d2       
+        return pv.Vector(
+            data=dv / dt,
+            index=self.index.to_numpy()[1:-1],
+            time_unit=self.time_unit,
+            dim_unit=self.dim_unit + ' * ' + self.time_unit + "^-2",
+            type="Second derivative"
+        )    
 
 
 
