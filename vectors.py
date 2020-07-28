@@ -723,7 +723,7 @@ class Vector(pd.DataFrame):
         """
 
         # handle the case B is a pandas.DataFrame or a Vector with the same dimensions of self
-        if match(self, B):
+        if Vector.match(self, B):
             new_column = " + ".join(self.columns.to_numpy())
             values = [i.dot(j.T) for i, j in zip(self.values, B.values)]
             return Vector(values, index=self.index, columns=[new_column]).__finalize__(self)
