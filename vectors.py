@@ -1556,7 +1556,7 @@ class ReferenceFrame():
         # rotate vector
         V = vector - O
         for t in V.index.to_numpy():
-            V.loc[t] = V.loc[t].dot(self.to_local)
+            V.loc[t] = V.loc[t].dot(self._to_local)
         return V
     
 
@@ -1580,5 +1580,5 @@ class ReferenceFrame():
         # rotate vector
         V = vector.copy()
         for t in V.index.to_numpy():
-            V.loc[t] = V.loc[t].dot(self.to_global)
+            V.loc[t] = V.loc[t].dot(self._to_global)
         return V + O
