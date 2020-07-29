@@ -71,11 +71,11 @@ def pad(x, before=0, after=0, type="linear", value=0, plot=False, axis=0):
     assert np.any([type.lower() == i for i in types]), "type must be any of " + str(types)
     
     # check before and after
+    n = x.shape[axis]
     assert before <= n, "before cannot be higher than " + str(n)
     assert after <= n, "after cannot be higher than " + str(n)
 
     # get the padder
-    n = x.shape[axis]
     if type.lower() == "mirror":
         inv = np.flip(x, axis=axis)
     elif type.lower() == "linear":
