@@ -597,7 +597,12 @@ class Vector(pd.DataFrame):
         c = (A - C).module
 
         # return the angle
-        return ((a ** 2 + b ** 2 - c ** 2) / (2 * a * b).values).apply(np.arccos, 0)
+        k = (a ** 2 + b ** 2 - c ** 2) / (2 * a * b).values
+        k.loc[k.index] = np.arccos(k.values)
+        k.time_unit = A.time_unit
+        k.dim_unit = "rad"
+        k.type = "Angle"
+        return k
 
 
 
