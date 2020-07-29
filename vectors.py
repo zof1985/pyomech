@@ -130,6 +130,7 @@ class Vector(pd.DataFrame):
         return Vector(
             data=(y[2:, :] - y[:-2, :]) / (x[2:, :] - x[:-2, :]),
             index=self.index.to_numpy()[1:-1],
+            columns=self.columns.to_numpy(),
             time_unit=self.time_unit,
             dim_unit=self.dim_unit + ' * ' + self.time_unit + "^-1",
             type="First derivative"
@@ -153,6 +154,7 @@ class Vector(pd.DataFrame):
         return Vector(
             data=dv / dt,
             index=self.index.to_numpy()[1:-1],
+            columns=self.columns.to_numpy(),
             time_unit=self.time_unit,
             dim_unit=self.dim_unit + ' * ' + self.time_unit + "^-2",
             type="Second derivative"
