@@ -34,7 +34,7 @@ def pad(x, before=0, after=0, type="linear", value=0, plot=False, axis=0):
     pad the signal mirroring its ends.
 
     Input:
-        x:          (ndarray)
+        x:          (1D array)
                     the signal to be padded
         
         before:     (int)
@@ -54,9 +54,6 @@ def pad(x, before=0, after=0, type="linear", value=0, plot=False, axis=0):
 
         plot:       (bool)
                     if True, a bokeh figure is returned in addition to the padded signal.
-        
-        axis:       (int)
-                    the axis along with x has to be padded
 
     Output:
         z:          (ndarray)
@@ -71,29 +68,26 @@ def pad(x, before=0, after=0, type="linear", value=0, plot=False, axis=0):
     assert np.any([type.lower() == i for i in types]), "type must be any of " + str(types)
     
     # check before and after
-    n = x.shape[axis]
+    n = len(x)
     assert before <= n, "before cannot be higher than " + str(n)
     assert after <= n, "after cannot be higher than " + str(n)
 
     # get the padder
     if type.lower() == "mirror":
-        inv = np.flip(x, axis=axis)
+        b_pad = np.flip(x)[(n-before-1):-1]
+        a_pad = np.flip(x[1: (after + 1)])
     elif type.lower() == "linear":
-        inv = 2 * np.mean(x, axis) - np.flip(x, axis=axis) 
+        b_pad = 2 * x[0] - np.flip(x)[(n-before-1):-1]
+        a_pad = np.flip(x[(n-after-1):-1])
     elif type.lower() == "constant":
-        inv = np.tile(value, n)
+        b_pad = np.tile(value, before)
+        a_pad = np.tile(value, after)
         
-    # get the padded before
-    b_pad = inv[(n-before-1):-1]
-
-    # get the padded after
-    a_pad = inv[1: (after + 1)]
-    
     # concatenate the signal
-    z = np.concatenate([b_pad, x, a_pad], axis=axis)
+    z = np.concatenate([b_pad, x, a_pad], axis=0)
 
     # return the signal if plot is false
-    if not plot or z.ndim > 1:
+    if not plot:
         return z
     
     # generate the output plot figure
