@@ -29,7 +29,7 @@ fig_size = 300  # pixels
 
 
 
-def pad_mirror(x, before=0, after=0, axis=0, plot=False):
+def pad(x, before=0, after=0, type="linear", value=0, plot=False, axis=0):
     """
     pad the signal mirroring its ends.
 
@@ -43,11 +43,20 @@ def pad_mirror(x, before=0, after=0, axis=0, plot=False):
         after:      (int)
                     the number of padding values to be added after x
         
-        axis:       (int)
-                    the axis along with x has to be padded
+        type:       (str)
+                    the padding type. It can be any of:
+                        "linear":   the signal is extended creating a specular image of it on all axes.
+                        "mirror":   the signal is extended mirroring the original signal at its ends.
+                        "constant": the signal is padded using the "value" provided at each end.
+        
+        value:      (int)
+                    the value to be used for padding if type = "constant". Ignored otherwise.
 
         plot:       (bool)
                     if True, a bokeh figure is returned in addition to the padded signal.
+        
+        axis:       (int)
+                    the axis along with x has to be padded
 
     Output:
         z:          (ndarray)
@@ -57,12 +66,23 @@ def pad_mirror(x, before=0, after=0, axis=0, plot=False):
                     a bokeh.Figure object representing the padding action.
     """
 
-    # get the inverse
-    inv = np.flip(x, axis=axis)
-    n = x.shape[axis]
+    # check the type
+    types = ["linear", "mirror", "constant"]
+    assert np.any([type.lower() == i for i in types]), "type must be any of " + str(types)
+    
+    # check before and after
     assert before <= n, "before cannot be higher than " + str(n)
     assert after <= n, "after cannot be higher than " + str(n)
 
+    # get the padder
+    n = x.shape[axis]
+    if type.lower() == "mirror":
+        inv = np.flip(x, axis=axis)
+    elif type.lower() == "linear":
+        inv = 2 * np.mean(x, axis) - np.flip(x, axis=axis) 
+    elif type.lower() == "constant":
+        inv = np.tile(value, n)
+        
     # get the padded before
     b_pad = inv[(n-before-1):-1]
 
