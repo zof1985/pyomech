@@ -632,7 +632,7 @@ class Vector(pd.DataFrame):
         t = (A - C).dot(B - A) / ((B - A).module.values ** 2)
 
         # get X
-        return A + (B - A) * t
+        return A + (B - A) * t.values
 
 
     
