@@ -39,7 +39,7 @@ class Vector(pd.DataFrame):
 
 
 
-    def cubic_spline_interpolation(self, x=None, n=None, plot=True):
+    def cubic_spline_interpolation(self, x=None, n=None, plot=False):
         """
         return a vector after having cubic-spline interpolated its dimensions.
 
@@ -88,7 +88,7 @@ class Vector(pd.DataFrame):
         for i, v in enumerate(plots):
             
             # get the figure corresponding to the current dimension
-            f = plots[v].children[0]
+            f = plots[v]
 
             # adjust the axis labels
             f.xaxis.axis_label = self.time_unit
