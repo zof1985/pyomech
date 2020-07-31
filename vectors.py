@@ -69,16 +69,11 @@ class Vector(pd.DataFrame):
         plots = {}
         V = {}
         for i, v in enumerate(self.columns):
+            K = cubic_spline_interpolation(y=self[v].values.flatten(), x_old=self.index.to_numpy(),
+                                           x_new=x, plot=plot)
             if plot:
-                K, ps = cubic_spline_interpolation(y=self[v].values.flatten(),
-                                                   x_old=self.index_to_numpy(),
-                                                   x_new=x, plot=plot)
-                plots[v] = ps
-
-            else:
-                K = cubic_spline_interpolation(y=self[v].values.flatten(),
-                                               x_old=self.index.to_numpy(),
-                                               x_new=x, plot=plot)
+                plots[v] = K[1]
+                K = K[0]
             V[v] = K
 
         # get the interpolated vector
