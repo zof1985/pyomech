@@ -12,7 +12,7 @@ import joblib as jl
 import itertools as it
 import scipy.stats as ss
 import warnings
-
+from .regression import *
 
 
 ######## CONSTANTS    ########
@@ -693,3 +693,114 @@ class Cohen_d(EffectSize):
 
         # return the test
         super(Cohen_d, self).__init__(d, "Cohen's d")
+
+
+
+class ANOVA():
+
+
+
+    def __init__(self, source, data, within=None, between=None, subjects=None, alpha=0.05,
+                 two_tailed=True, na_replacement="median"):
+        """
+        Generate an ANOVA object containing all the relevant data related to an analysis of
+        variance Test.
+        """
+
+
+        #* MISSING DATA
+
+        # make the working copy of source
+        SRC = source.copy()
+
+        # ensure the na_replacement parameter has been correctly provided
+        txt = "'na_replacement' must be 'mean' or 'median'"
+        assert np.any([na_replacement == i for i in ['mean', 'median']]), txt
+
+        # get the replacing values
+        groups = np.append(within, between)
+        rep = SRC.groupby(groups, as_index=False).describe()
+
+        # replace missing values
+        idx = SRC.index.to_numpy()
+        nans = np.argwhere(SRC[data].isna().values)
+        for nan in nans:
+
+            # get the current group
+            group = np.array([SRC.loc[idx[nan[0]], groups].values]).flatten()
+
+            # now get the replacement corresponding to the current group
+            replacement = rep.loc[rep[groups].isin(group).all(1)][data[nan[1]]]
+
+            # replace the value
+            SRC.loc[SRC[groups].isin(group).all(1), data[nan[1]]] = replacement
+
+
+        #* BETWEEN SUBJECTS
+
+    
+    def __dummify__(self, source, groups):
+        """
+        create a dummy copy of the groups in source to be used for regression analysis
+
+        Input:
+            source: (pandas.DataFrame)
+                    the dataframe containing all data
+            
+            groups: (list)
+                    a list containing the name of the columns in source with the groups
+        
+        Output:
+            dummy:  (pandas.DataFrame)
+                    a dataframe with columns representing the dummy combination of groups
+        """
+
+        # get the univariate groups
+        GD = {}
+        for g in groups:
+
+            # get the groups combinations
+            G, I = np.unique(source[g].values.flatten(), return_index=True)
+        
+            # get the dummy columns
+            dummy = np.zeros((source.shape[0], len(G) - 1))
+            GD[g] = pd.DataFrame(dummy, index=source.index, columns=[label for label in G[1:]])
+        
+            # fill the columns
+            for i in np.arange(1, len(I)):
+                GD[g].iloc[I[i], G[i]] = 1
+        
+        # combine the groups
+        C = [j for j in it.product(*[GD[i].columns.to_numpy() for i in GD], repeat=1)]
+        D = pd.concat([GD[i] for i in GD], axis=1)
+        F = {":".join(C[i]): np.prod(D[i].values, axis=1).values.flatten() for i in C}
+        
+        # return the dummy groups dataframe
+        return pd.DataFrame(F, index=source.index.to_numpy())
+
+    
+
+    def __regress__(self, source, groups, data):
+        """
+        obtain regression residuals for the current group in source for each element of data.
+        """
+
+        # get the groups combinations
+        combs = [i for j in np.arange(len(groups)) + 1 for i in it.combinations(groups, j)]
+
+        
+
+        # for each vector in data perform a multiple regression and extract:
+        #   Predicted Sum of Squares
+        #   Total Sum of Squares
+        #   Sum of Squares residuals
+        #   degrees of freedom for all
+        out = []
+        for D in data:
+            lr = LinearRegression(source[D].values, dummy.values)
+            SSr = np.sum((source[D].values.flatten() - lr.predict(dummy.values).flatten()) ** 2)
+            SSt = np.sum((source[D].values.flatten() - np.mean(source[D].values.flatten())) ** 2)
+            SSe = SSt - SSr
+            line = {'SSreg': [SSr], 'SSres': [SSe], 'SStot': [SSt], 'DF': [df]}
+            out += [pd.DataFrame(line, index=[D]).T]
+        return pd.concat(out, axis=1)
