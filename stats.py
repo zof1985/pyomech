@@ -717,33 +717,73 @@ class ANOVA():
         txt = "'na_replacement' must be 'mean' or 'median'"
         assert np.any([na_replacement == i for i in ['mean', 'median']]), txt
 
-        # get the replacing values
-        groups = np.append(within, between)
-        rep = SRC.groupby(groups, as_index=False).describe()
-
-        # replace missing values
+        # get missing values coordinates
         idx = SRC.index.to_numpy()
         nans = np.argwhere(SRC[data].isna().values)
-        for nan in nans:
 
-            # get the current group
-            group = np.array([SRC.loc[idx[nan[0]], groups].values]).flatten()
+        # replace missing values
+        if len(nans) > 0:
 
-            # now get the replacement corresponding to the current group
-            replacement = rep.loc[rep[groups].isin(group).all(1)][data[nan[1]]]
+            # get the replacing values
+            if within is None:
+                groups = np.copy(between).flatten().tolist()
+            elif between is None:
+                groups = np.copy(within).flatten().tolist()
+            else:
+                groups = np.append(within, between).flatten().tolist()
+            rep = SRC.groupby(groups).describe()
 
-            # replace the value
-            SRC.loc[SRC[groups].isin(group).all(1), data[nan[1]]] = replacement
+            # iterate the replacement
+            for nan in nans:
+
+                # get the current group
+                group = np.array([SRC.loc[idx[nan[0]], groups].values]).flatten()
+
+                # now get the replacement corresponding to the current group
+                replacement = rep.loc[rep[groups].isin(group).all(1)][data[nan[1]]]
+
+                # replace the value
+                SRC.loc[SRC[groups].isin(group).all(1), data[nan[1]]] = replacement
 
 
         #* VARIABILITY
 
-        SBJ = self.__regress__(source, [subjects], data) if subjects is not None else None
-        GRP = self.__regress__(source, groups, data)
+        # handle the existence of a subjects col
+        if subjects is None:
+            SRC.loc[SRC.index, '__SUB__'] = np.arange(SRC.shape[0])
+        else:
+            SRC.loc[SRC.index, '__SUB__'] = SRC[subjects].values.flatten()
         
+        # get the subjects variability
+        SBJ = self.__regress__(SRC, ['__SUB__'], data)
+        
+        # get factors variability
+        GRP = self.__regress__(SRC, groups, data)
+        
+        #
 
         #* ANOVA TABLE
 
+        # NOTE
+        # The ANOVA table is a pandas DataFrame having shape:
+        #
+        #                              SS    df    MS     F
+        #   Between subjects
+        #   Factor Between    A       XXXX  XXXX  XXXX  XXXX
+        #          ...
+        #   Factor Between    N       XXXX  XXXX  XXXX  XXXX
+        #
+        #   Within subjects
+        #   Factor Within     B       XXXX  XXXX  XXXX  XXXX
+        #          ...
+        #   Factor within     M       XXXX  XXXX  XXXX  XXXX
+        #
+        #   Interaction      A:B      XXXX  XXXX  XXXX  XXXX
+        #          ...
+        #   Interaction    A:N:B:M    XXXX  XXXX  XXXX  XXXX
+        
+        
+        # within subjects line
 
 
 
@@ -755,82 +795,53 @@ class ANOVA():
         obtain regression residuals for the current group in source for each element of data.
         """
         
+        # get the groups combinations
+        C = [i for j in np.arange(len(groups)) + 1 for i in it.combinations(groups, j)]
 
-        def dummify(source, groups):
-            """
-            create a dummy copy of the groups in source to be used for regression analysis
+        # for each factor combination, get the corresponding sum of squares and degrees of freedom
+        D = pd.DataFrame()
+        for c in C:
 
-            Input:
-                source: (pandas.DataFrame)
-                        the dataframe containing all data
-                
-                groups: (list)
-                        a list containing the name of the columns in source with the groups
-            
-            Output:
-                dummy:  (pandas.DataFrame)
-                        a dataframe with columns representing the dummy combination of groups
-            """
+
+            #* GET THE DUMMY FACTORS MATRIX
 
             # get the univariate groups
             GD = {}
-            for g in groups:
+            for g in c:
 
                 # get the groups combinations
-                G, I = np.unique(source[g].values.flatten(), return_index=True)
-            
+                G = np.unique(source[g].values.flatten())
+                I = [source.loc[source.isin([i]).any(1)].index.to_numpy() for i in G]
+                
                 # get the dummy columns
                 dummy = np.zeros((source.shape[0], len(G) - 1))
                 GD[g] = pd.DataFrame(dummy, index=source.index, columns=[label for label in G[1:]])
-            
+                
                 # fill the columns
                 for i in np.arange(1, len(I)):
-                    GD[g].iloc[I[i], G[i]] = 1
+                   GD[g].loc[I[i], G[i]] = 1
             
             # combine the groups
             C = [j for j in it.product(*[GD[i].columns.to_numpy() for i in GD], repeat=1)]
             D = pd.concat([GD[i] for i in GD], axis=1)
-            F = {":".join(C[i]): np.prod(D[i].values, axis=1).values.flatten() for i in C}
+            F = {":".join(i): np.prod(D[[k for k in i]], axis=1).values.flatten() for i in C}
             
             # return the dummy groups dataframe
-            return pd.DataFrame(F, index=source.index.to_numpy())
+            dummy = pd.DataFrame(F, index=source.index.to_numpy())
 
 
-        # get the groups combinations
-        C = [i for j in np.arange(len(groups)) + 1 for i in it.combinations(groups, j)]
+            #* EXTRACT THE SQUARES
 
-        # for each element in data perform a multiple regression and extract:
-        #   Predicted Sum of Squares
-        #   Total Sum of Squares
-        #   Sum of Squares residuals
-        #   degrees of freedom for all
-        O = []
-        for param in data:
-            
-            # get the squares from each effect
-            E = []
-            for c in C:
-
-                # get the dummy groups
-                N = np.arange(len(c))
-                D = [dummyfy(source, i) for j in N + 1 for i in it.combinations(c, j)]
-                D = pd.concat(D, axis=1)
-
-                # get the outcomes
+            for param in data:
                 Y = source[param].values
-                R = LinearRegression(Y, D.values)
-                Z = R.predict(D.values).flatten()
+                R = LinearRegression(Y, dummy.values)
+                Z = R.predict(dummy.values).flatten()
                 SSR = np.sum((Y - Z) ** 2)
                 SST = np.sum((Y - np.mean(Y.flatten())) ** 2)
                 SSE = SST - SSR
-                line = {'SSR': [SSR], 'SST': [SST], 'SSE': [SSE], 'DF': [D.shape[1]]}
-                label = ":".join(c)
-                tuples = list(zip(np.tile(":".join(c), len(line)), [i for i in line]))
-                index = pd.MultiIndex.from_tuples(tuples)
-                E += [pd.DataFrame([line[i] for i in line], index=index, columns=[param])]
-            
-            # concatenate all effects
-            O += [pd.concat(E, axis=0)]
+                idx = pd.MultiIndex.from_tuples(list(zip(np.tile(param, 3), ["SSR", "SST", "DF"])))
+                col = [":".join(c)]
+                D = D.append(pd.DataFrame([SSR, SST, dummy.shape[1]], columns=col, index=idx))
         
         # return the regression squares for each parameter
-        return pd.concat(O, axis=1)
+        return D
