@@ -736,47 +736,17 @@ class ANOVA():
             SRC.loc[SRC[groups].isin(group).all(1), data[nan[1]]] = replacement
 
 
-        #* BETWEEN SUBJECTS
+        #* VARIABILITY
 
-    
-    def __dummify__(self, source, groups):
-        """
-        create a dummy copy of the groups in source to be used for regression analysis
+        SBJ = self.__regress__(source, [subjects], data) if subjects is not None else None
+        GRP = self.__regress__(source, groups, data)
+        
 
-        Input:
-            source: (pandas.DataFrame)
-                    the dataframe containing all data
-            
-            groups: (list)
-                    a list containing the name of the columns in source with the groups
-        
-        Output:
-            dummy:  (pandas.DataFrame)
-                    a dataframe with columns representing the dummy combination of groups
-        """
+        #* ANOVA TABLE
 
-        # get the univariate groups
-        GD = {}
-        for g in groups:
 
-            # get the groups combinations
-            G, I = np.unique(source[g].values.flatten(), return_index=True)
-        
-            # get the dummy columns
-            dummy = np.zeros((source.shape[0], len(G) - 1))
-            GD[g] = pd.DataFrame(dummy, index=source.index, columns=[label for label in G[1:]])
-        
-            # fill the columns
-            for i in np.arange(1, len(I)):
-                GD[g].iloc[I[i], G[i]] = 1
-        
-        # combine the groups
-        C = [j for j in it.product(*[GD[i].columns.to_numpy() for i in GD], repeat=1)]
-        D = pd.concat([GD[i] for i in GD], axis=1)
-        F = {":".join(C[i]): np.prod(D[i].values, axis=1).values.flatten() for i in C}
-        
-        # return the dummy groups dataframe
-        return pd.DataFrame(F, index=source.index.to_numpy())
+
+
 
     
 
@@ -784,23 +754,83 @@ class ANOVA():
         """
         obtain regression residuals for the current group in source for each element of data.
         """
-
-        # get the groups combinations
-        combs = [i for j in np.arange(len(groups)) + 1 for i in it.combinations(groups, j)]
-
         
 
-        # for each vector in data perform a multiple regression and extract:
+        def dummify(source, groups):
+            """
+            create a dummy copy of the groups in source to be used for regression analysis
+
+            Input:
+                source: (pandas.DataFrame)
+                        the dataframe containing all data
+                
+                groups: (list)
+                        a list containing the name of the columns in source with the groups
+            
+            Output:
+                dummy:  (pandas.DataFrame)
+                        a dataframe with columns representing the dummy combination of groups
+            """
+
+            # get the univariate groups
+            GD = {}
+            for g in groups:
+
+                # get the groups combinations
+                G, I = np.unique(source[g].values.flatten(), return_index=True)
+            
+                # get the dummy columns
+                dummy = np.zeros((source.shape[0], len(G) - 1))
+                GD[g] = pd.DataFrame(dummy, index=source.index, columns=[label for label in G[1:]])
+            
+                # fill the columns
+                for i in np.arange(1, len(I)):
+                    GD[g].iloc[I[i], G[i]] = 1
+            
+            # combine the groups
+            C = [j for j in it.product(*[GD[i].columns.to_numpy() for i in GD], repeat=1)]
+            D = pd.concat([GD[i] for i in GD], axis=1)
+            F = {":".join(C[i]): np.prod(D[i].values, axis=1).values.flatten() for i in C}
+            
+            # return the dummy groups dataframe
+            return pd.DataFrame(F, index=source.index.to_numpy())
+
+
+        # get the groups combinations
+        C = [i for j in np.arange(len(groups)) + 1 for i in it.combinations(groups, j)]
+
+        # for each element in data perform a multiple regression and extract:
         #   Predicted Sum of Squares
         #   Total Sum of Squares
         #   Sum of Squares residuals
         #   degrees of freedom for all
-        out = []
-        for D in data:
-            lr = LinearRegression(source[D].values, dummy.values)
-            SSr = np.sum((source[D].values.flatten() - lr.predict(dummy.values).flatten()) ** 2)
-            SSt = np.sum((source[D].values.flatten() - np.mean(source[D].values.flatten())) ** 2)
-            SSe = SSt - SSr
-            line = {'SSreg': [SSr], 'SSres': [SSe], 'SStot': [SSt], 'DF': [df]}
-            out += [pd.DataFrame(line, index=[D]).T]
-        return pd.concat(out, axis=1)
+        O = []
+        for param in data:
+            
+            # get the squares from each effect
+            E = []
+            for c in C:
+
+                # get the dummy groups
+                N = np.arange(len(c))
+                D = [dummyfy(source, i) for j in N + 1 for i in it.combinations(c, j)]
+                D = pd.concat(D, axis=1)
+
+                # get the outcomes
+                Y = source[param].values
+                R = LinearRegression(Y, D.values)
+                Z = R.predict(D.values).flatten()
+                SSR = np.sum((Y - Z) ** 2)
+                SST = np.sum((Y - np.mean(Y.flatten())) ** 2)
+                SSE = SST - SSR
+                line = {'SSR': [SSR], 'SST': [SST], 'SSE': [SSE], 'DF': [D.shape[1]]}
+                label = ":".join(c)
+                tuples = list(zip(np.tile(":".join(c), len(line)), [i for i in line]))
+                index = pd.MultiIndex.from_tuples(tuples)
+                E += [pd.DataFrame([line[i] for i in line], index=index, columns=[param])]
+            
+            # concatenate all effects
+            O += [pd.concat(E, axis=0)]
+        
+        # return the regression squares for each parameter
+        return pd.concat(O, axis=1)
