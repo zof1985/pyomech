@@ -10,9 +10,11 @@ import numpy as np
 import pandas as pd
 import joblib as jl
 import itertools as it
-import scipy.stats as ss
+import scipy.stats as st
+import scipy.linalg as sl
 import warnings
-from .regression import *
+from .regression import LinearRegression
+
 
 
 ######## CONSTANTS    ########
@@ -108,28 +110,37 @@ def split_data(source, data, groups):
 class EffectSize():
 
 
-    def __init__(self, value, name):
+
+    def __init__(self, value, name, **kwargs):
         """
-        Generic class method which contains the results of Effect Size measurement.
+        A General class object containing the output of a generic EffectSize.
 
         Input:
-            value:  (float)
-                    the effect size value.
+            value:      (float)
+                        the value describing the test
 
-            name:   (str)
-                    the name of the effect size measure.
+            name:       (str)
+                        the label describing the type of test.
+            
+            kwargs:     (any)
+                        any additional argument to be stored.
         """
 
-        self.name = name
-        self.value = float(value)
+        # add the entered data
+        self.name = str(name)
+        self.value = np.squeeze([value])
+        
+        # add all the other parameters
+        for i in kwargs:
+            setattr(self, i, np.squeeze([kwargs[i]]))
 
-   
-
+    
+    
     def to_df(self):
         """
         Create a column DataFrame containing all the outcomes of the EffectSize object.
         """
-        return pd.DataFrame([getattr(self, i) for i in self.attributes()], index = self.attributes(), columns=[0])
+        return pd.DataFrame([getattr(self, i) for i in self.attributes()], index=self.attributes(), columns=[0])
 
 
 
@@ -137,7 +148,7 @@ class EffectSize():
         """
         create a copy of the current Test object.
         """
-        return Test(**{i: getattr(self, i) for i in self.attributes()})
+        return EffectSize(**{i: getattr(self, i) for i in self.attributes()})
 
 
 
@@ -163,7 +174,7 @@ class Test(EffectSize):
 
 
 
-    def __init__(self, value, p, name, alpha, crit, **kwargs):
+    def __init__(self, value, name, p, alpha, crit, **kwargs):
         """
         A General class object containing the output for the majority of the statistical 0D tests.
 
@@ -182,20 +193,29 @@ class Test(EffectSize):
 
             name:       (str)
                         the label describing the type of test.
+            
+            kwargs:     (any)
+                        any additional argument to be stored.
         """
 
-        super(Test, self).__init__(value, name)
-        self.crit = float(crit)
-        self.alpha = float(alpha)
-        self.p = float(p)
+        # add the entered data
+        self.name = str(name)
+        self.value = np.squeeze([value])
+        self.crit = np.squeeze([crit])
+        self.alpha = np.squeeze([alpha])
+        self.p = np.squeeze([p])
         
         # add all the other parameters
         for i in kwargs:
-            setattr(self, i, kwargs[i])
+            setattr(self, i, np.squeeze([kwargs[i]]))
 
-
-
-########    IMPLEMENTATION CLASSES    ########
+    
+    
+    def copy(self):
+        """
+        create a copy of the current Test object.
+        """
+        return Test(**{i: getattr(self, i) for i in self.attributes()})
 
 
 
@@ -272,10 +292,10 @@ class T2(Test):
 
         # get the p value
         df_f = (p, na - p + (0 if nb is None else (nb - 1)))
-        v = ss.f.sf(f, *df_f)
+        v = st.f.sf(f, *df_f)
 
         # get the critical T2 test
-        f_crit = ss.f.isf(alpha, *df_f)
+        f_crit = st.f.isf(alpha, *df_f)
         t2_crit = f_crit / correction
         
         # get the T2 df
@@ -318,7 +338,7 @@ class T2(Test):
         n = X.shape[0]
 
         # test value
-        return float(a.dot(np.linalg.inv(K)).dot(a.T) * n)
+        return float(a.dot(sl.inv(K)).dot(a.T) * n)
 
 
 
@@ -358,9 +378,9 @@ class T2(Test):
 
         # test
         try:
-            return float((na * nb) / (na + nb) * (ab - aa).dot(np.linalg.inv(Kp)).dot((ab - aa).T))
+            return float((na * nb) / (na + nb) * (ab - aa).dot(sl.inv(Kp)).dot((ab - aa).T))
         except Exception:
-            return float((na * nb) / (na + nb) * (ab - aa).dot(np.linalg.pinv(Kp, hermitian=True)).dot((ab - aa).T))
+            return float((na * nb) / (na + nb) * (ab - aa).dot(sl.pinv(Kp, hermitian=True)).dot((ab - aa).T))
 
 
 
@@ -368,7 +388,8 @@ class T(Test):
 
 
 
-    def __init__(self, source, data, groups=None, mu=0, paired=True, alpha=0.05, two_tailed=True, verbose=True):
+    def __init__(self, source, data, groups=None, mu=0, paired=True, alpha=0.05, two_tailed=True,
+                 verbose=True):
         """
         Perform a T test.
 
@@ -386,8 +407,8 @@ class T(Test):
                         The mean value to be used for comparisons.
             
             paired:     (bool)
-                        If both A and B are provided, paired=True will return a paired T test. Otherwise,
-                        a two-sample test is performed. If B is None, paired is ignored.
+                        If both A and B are provided, paired=True will return a paired T test.
+                        Otherwise, a two-sample test is performed. If B is None, paired is ignored.
 
             alpha:      (float)
                         the level of significance
@@ -435,92 +456,175 @@ class T(Test):
                 sb = np.var(df_data[1]) 
 
                 # WELCH TEST (in case of unequal variance)
-                if BrownForsythe(source=source, data=data, groups=groups, alpha=alpha).p < alpha:
+                B = BrownForsythe(source, data, groups, alpha, two_tailed)
+                if B.p < alpha:
                     if verbose:
                         warnings.warn("groups have unequal variance. Welch's T test is used.")
                     name = "Welch's T"
-                    df = ((sa / na + sb / nb) ** 2) / ((((sa / na) ** 2) / (na - 1)) + (((sb / nb) ** 2) / (nb - 1)))
+                    df = (sa / na + sb / nb) ** 2
+                    df /= ((((sa / na) ** 2) / (na - 1)) + (((sb / nb) ** 2) / (nb - 1)))
                     Sp = np.sqrt(sa / na + sb / nb)
                 
                 # TWO SAMPLES T
                 else:
                     name = "T two samples"
                     df = na + nb - 2
-                    Sp = np.sqrt(((na - 1) * sa + (nb - 1) * sb) / (na + nb - 2)) * np.sqrt(1 / na + 1 / nb)
+                    Sp = np.sqrt(((na - 1) * sa + (nb - 1) * sb) / (na + nb - 2))
+                    Sp *= np.sqrt(1 / na + 1 / nb)
+                
+                # T value
                 t = (np.mean(df_data[0]) - np.mean(df_data[1])) / Sp
                 
         # get the critical T test
-        a = alpha * (0.5 if two_tailed else 1)
-        t_crit = ss.t.isf(a, df)
+        t_crit = st.t.isf(alpha * (0.5 if two_tailed else 1), df)
         
         # adjust the test value in case of a two-tailed test
         if two_tailed:
             t = abs(t)
 
         # get the p value
-        v = ss.t.sf(t, df)
+        v = st.t.sf(t, df)
         v = np.min([1, 2 * v]) if two_tailed else v
 
         # create the test
-        super(T, self).__init__(value=t, df=df, crit=t_crit, alpha=alpha, two_tailed=two_tailed, p=v, name=name)
+        super(T, self).__init__(value=t, df=df, crit=t_crit, alpha=alpha, two_tailed=two_tailed,
+                                p=v, name=name)
 
 
 
-class BrownForsythe(Test):
+class F(Test):
 
 
 
-    def __init__(self, source, data, groups, alpha=0.05):
+    def __init__(self, SS_num, DF_num, SS_den, DF_den, eps=1, alpha=0.05, two_tailed=True):
+        """
+        Calculate an F test.
+
+        Input:
+            SS_num:     (float)
+                        the numerator sum of squares.
+
+            DF_num:     (float)
+                        the numerator degrees of freedom.
+
+            SS_den:     (float)
+                        the denominator sum of squares.
+
+            DF_den:     (float)
+                        the denominator degrees of freedom.
+            
+            eps:        (float)
+                        the epsilon for correcting the degrees of freedom
+                        for sphericity. It must be a positive value, such as the
+                        Greenhouse-Geisser epsilon, typically within the (0, 1] range.
+
+            alpha:      (float)
+                        the level of significance.
+
+            two-tailed: (bool)
+                        Should the p-value be calculated from a one or two-tailed distribution?
+        
+        Output:
+            A Test instance containing the output of the test.
+        """
+
+        # regressors
+        MS_num = SS_num / DF_num
+        MS_den = SS_den / DF_den
+        
+        # get the F value and its degrees of freedom
+        f = MS_num / MS_den
+        df = (DF_num * eps, DF_den * eps)
+
+        # get the critical F value
+        f_crit = st.f.isf(alpha * (0.5 if two_tailed else 1), *df)
+                
+        # get the p value
+        v = st.f.sf(f, *df)
+
+        # create the test
+        super(F, self).__init__(value=f, df=df, crit=f_crit, alpha=alpha, two_tailed=two_tailed,
+                                p=v, name="F test")
+        
+        # add some additional parameters
+        self.SS_num = SS_num
+        self.DF_num = DF_num
+        self.MS_num = MS_num
+        self.SS_den = SS_den
+        self.DF_den = DF_den
+        self.MS_den = MS_den
+        self.eps = eps
+
+
+
+class BrownForsythe(F):
+
+
+
+    def __init__(self, source, dv, iv, alpha=0.05, two_tailed=True):
         """
         tests the null hypothesis that the population variances are equal.
 
         Input:
             source:     (pandas.DataFrame)
-                        the dataframe containing the data
+                        the dataframe where all variables are stored.
 
-            data:       (str, 1D array or list)
-                        The names of the source columns containing the data to be investigated.
+            dv:         (str)
+                        the name of the column defining the dependent variable of the model.
 
-            groups:     (str)
-                        The name of the source column containing the grouping variable.
+            iv:         (list)
+                        the list of column names containing the indipendent variables.
 
             alpha:      (float)
                         the level of significance.
 
+            two_tailed: (bool)
+                        should the p-value be calculated from a two-tailed distribution?
+
         Output:
             A Test instance object containing the outcomes of the test.
+        
+        Note:
+            All factors combinations are assumed to rely on between subjects factors.
         """
 
-        # get the data
-        df_data = split_data(source, data, groups)[0]
-
-        # split the data in groups
-        samples = []
-        sizes = []
-        means = []
-        for i in df_data:
-            samples += [abs(i - np.median(i))]
-            sizes += [i.shape[0]]
-            means += [np.mean(samples[-1])]
+        # check the variables
+        assert isinstance(source, pd.DataFrame), "source must be a pandas.DataFrame instance."
+        assert isinstance(iv, list), "'iv' must be a list instance."
+        assert isinstance(dv, list), "'dv' must be a list instance."
+        assert len(dv) >= 1, "'dv' must be non-empty."
+        for i in iv + dv:
+            assert np.any([i == j for j in source]), "{} not found in 'source'.".format(i)
         
-        # get the data concerning the whole dataset
-        N = np.sum(sizes)                                                 # data size
-        Z = np.sum([i * v for i, v in zip(means, sizes)]) / N             # grand mean  
-        P = len(df_data)                                                  # number of groups
+        # split the data into unique groups and obtain the residuals against the median
+        U = np.unique(source[iv].values.astype(str), axis=0)
+        Z = {}
+        N = 0
+        p = 0
+        for j, i in enumerate(U):
+            y = source.loc[source[iv].isin(i).all(1)][dv].values.flatten()
+            z = abs(y - np.median(y))
+            Z[j] = {'zj': np.mean(z), 'nj': len(z), 'zij': z}
+            N += len(z)
+            p += 1
+        Z_avg = np.mean([Z[j]['zj'] for j in Z])
 
-        # get the F statistic
-        F = (N - P) / (P - 1) * np.sum([i * ((v - Z) ** 2) for i, v in zip(sizes, means)])
-        F /= np.sum([np.sum((i - v) ** 2) for i, v in zip(samples, means)])
-        df = (P - 1, N - P)
+        # get the MS
+        MS_num = (N - p) * np.sum([Z[j]['nj'] * ((Z[j]['zj'] - Z_avg) ** 2) for j in Z])
+        MS_den = (p - 1) * np.sum([np.sum((Z[j]['zij'] - Z[j]['zj']) ** 2) for j in Z])
+                        
+        # get the df
+        DF_num = p - 1
+        DF_den = N - p
 
-        # get the p-value
-        p = ss.f.sf(F, *df)
-
-        # get the critical F value
-        F_crit = ss.f.isf(alpha, *df)
+        # get the SS
+        SS_num = MS_num * DF_num
+        SS_den = MS_den * DF_den
 
         # store the outcomes
-        super(BrownForsythe, self).__init__(value=F, df=df, crit=F_crit, alpha=alpha, p=p, name="Brown-Forsythe")
+        super(BrownForsythe, self).__init__(SS_num, DF_num, SS_den, DF_den, eps=1, alpha=0.05,
+                                            two_tailed=two_tailed)
+        self.name = "Brown-Forsythe"
 
 
 
@@ -696,152 +800,632 @@ class Cohen_d(EffectSize):
 
 
 
-class ANOVA():
+class TotalEtaSquare(EffectSize):
 
 
 
-    def __init__(self, source, data, within=None, between=None, subjects=None, alpha=0.05,
-                 two_tailed=True, na_replacement="median"):
+    def __init__(self, num_SS=None, tot_SS=None):
         """
-        Generate an ANOVA object containing all the relevant data related to an analysis of
-        variance Test.
+        Compute the partial eta squared effect size.
+
+        Input:
+            num_SS: (float, None)
+                    The numerator sum of squares.
+            
+            tot_SS: (float, None)
+                    The denominator sum of squares.
+        """
+       
+        # create the instance
+        super(TotalEtaSquare, self).__init__(num_SS / tot_SS, "Total EtaSq")
+
+
+
+class PartialEtaSquare(EffectSize):
+
+
+
+    def __init__(self, num_SS=None, den_SS=None):
+        """
+        Compute the partial eta squared effect size.
+
+        Input:
+            F_test: (F)
+                    An F test object. If passed, num_SS and den_SS are ignored.
+            
+            num_SS: (float, None)
+                    The numerator sum of squares. Ignored if F is not None.
+            
+            den_SS: (float, None)
+                    The denominator sum of squares. Ignored if F is not None.
         """
 
-
-        #* MISSING DATA
-
-        # make the working copy of source
-        SRC = source.copy()
-
-        # ensure the na_replacement parameter has been correctly provided
-        txt = "'na_replacement' must be 'mean' or 'median'"
-        assert np.any([na_replacement == i for i in ['mean', 'median']]), txt
-
-        # get missing values coordinates
-        idx = SRC.index.to_numpy()
-        nans = np.argwhere(SRC[data].isna().values)
-
-        # replace missing values
-        if len(nans) > 0:
-
-            # get the replacing values
-            if within is None:
-                groups = np.copy(between).flatten().tolist()
-            elif between is None:
-                groups = np.copy(within).flatten().tolist()
-            else:
-                groups = np.append(within, between).flatten().tolist()
-            rep = SRC.groupby(groups).describe()
-
-            # iterate the replacement
-            for nan in nans:
-
-                # get the current group
-                group = np.array([SRC.loc[idx[nan[0]], groups].values]).flatten()
-
-                # now get the replacement corresponding to the current group
-                replacement = rep.loc[rep[groups].isin(group).all(1)][data[nan[1]]]
-
-                # replace the value
-                SRC.loc[SRC[groups].isin(group).all(1), data[nan[1]]] = replacement
-
-
-        #* VARIABILITY
-
-        # handle the existence of a subjects col
-        if subjects is None:
-            SRC.loc[SRC.index, '__SUB__'] = np.arange(SRC.shape[0])
+        # from F
+        if F_test is not None:
+            assert isinstance(F_test, F), "F_test must be an instance of the F class."
+            pes = F_test.num_SS / (F_test.num_SS + F_test.den_SS)
+        
+        # from SSs
         else:
-            SRC.loc[SRC.index, '__SUB__'] = SRC[subjects].values.flatten()
+            pes = num_SS / (num_SS + den_SS)
         
-        # get the subjects variability
-        SBJ = self.__regress__(SRC, ['__SUB__'], data)
+        # create the instance
+        super(PartialEtaSquare, self).__init__(pes, "Partial EtaSq")
+
+
+
+class GeneralizedEtaSquare(EffectSize):
+
+
+
+    def __init__(self, num_SS=None, *args, **kwargs):
+        """
+        Compute the generalized eta square effect size.
+
+        Input:            
+            num_SS: (float, None)
+                    The numerator sum of squares. Ignored if F is not None.
+            
+            args:   (float)
+                    The list of sum of squares defining the errors.
+        """
+
+        # create the instance
+        err_SS = np.sum([i for i in args] + [kwargs[j] for j in kwargs])
+        super(GeneralizedEtaSquare, self).__init__(num_SS / (num_SS + err_SS), "Generalized EtaSq")
+
+
+
+class Anova(LinearRegression):
+
+
+
+    def __init__(self, source, dv, iv, subjects=None, alpha=0.05, two_tailed=True):
+        """
+        Generate an Anova class object.
+
+        Input:
+            source:         (pandas.DataFrame)
+                            the dataframe where all variables are stored.
+
+            dv:             (str)
+                            the name of the column defining the dependent variable of the model.
+
+            iv:             (list)
+                            the list of column names containing the indipendent variables.
+                                    
+            subjects:       (list or None)
+                            If none, the factors are treated as "between-only" factors. Conversely,
+                            if a list or a 1D ndarray is provided, the values are used to define
+                            within-subjects errors.
+                            If such value is provided, it is also added to source.
+
+            alpha:          (float)
+                            the level of significance.
+
+            two_tailed:     (bool)
+                            should the p-value be calculated from a two-tailed distribution?
+        """
         
-        # get factors variability
-        GRP = self.__regress__(SRC, groups, data)
+        #* DATA PREPARATION
+
+        # check the variables
+        assert isinstance(source, pd.DataFrame), "source must be a pandas.DataFrame instance."
+        assert isinstance(iv, list), "'iv' must be a list instance."
+        assert isinstance(dv, list), "'dv' must be a list instance."
+        assert len(dv) >= 1, "'dv' must be non-empty."
+        for i in iv + dv:
+            assert np.any([i == j for j in source]), "{} not found in 'source'.".format(i)
+        self.DV = dv
+        self.IV = iv
+        self.alpha = alpha
+        self.two_tailed = two_tailed
         
-        #
+        # check the subjects
+        if subjects is not None:
+            txt = "{} not found in 'source'.".format(subjects)
+            assert np.any([subjects == i for i in source]), txt
+            SRC = source.copy()
 
-        #* ANOVA TABLE
+        else:
+            SRC = source.astype(str)
+            unique_combs = np.unique(SRC[iv].values, axis=0)
+            for i in np.arange(len(unique_combs)):
+                cmb = unique_combs[i]
+                name = 'S{}'.format(i + 1)
+                index = SRC.loc[SRC.isin(cmb).all(1)].index.to_numpy()
+                SRC.loc[index, 'SBJ'] = name
+            subjects = 'SBJ'
+                
+        # regroup the source
+        GRP = SRC.groupby(iv + [subjects], as_index=False).mean()
+        self.source = GRP[iv + dv]
+        self.source.index = pd.Index(GRP[subjects].values.flatten())
 
-        # NOTE
-        # The ANOVA table is a pandas DataFrame having shape:
-        #
-        #                              SS    df    MS     F
-        #   Between subjects
-        #   Factor Between    A       XXXX  XXXX  XXXX  XXXX
-        #          ...
-        #   Factor Between    N       XXXX  XXXX  XXXX  XXXX
-        #
-        #   Within subjects
-        #   Factor Within     B       XXXX  XXXX  XXXX  XXXX
-        #          ...
-        #   Factor within     M       XXXX  XXXX  XXXX  XXXX
-        #
-        #   Interaction      A:B      XXXX  XXXX  XXXX  XXXX
-        #          ...
-        #   Interaction    A:N:B:M    XXXX  XXXX  XXXX  XXXX
+        # separate between and within factors
+        BV = []
+        WV = []
+        for i in self.source:
+            if not np.any([i == j for j in dv]):
+                if self.__isBetween__(pd.DataFrame(self.source[i])):
+                    BV += [i]
+                else:
+                    WV += [i]
+        self.between = BV
+        self.within = WV
+
+        # initialize the object
+        X = [self.__contrasts__(self.source[i.split(":")])
+             for i in self.__combine__(self.between + self.within)]
+        X = pd.concat(X, axis=1)
+        Y = pd.DataFrame(self.source[dv])
+        super(Anova, self).__init__(Y, X)
+
+
+
+    @property
+    def anova_table(self):
+        """
+        Return a pandas.DataFrame containing the Anova analysis of the entered model.
+        """
         
         
-        # within subjects line
+        #* WITHIN <- BETWEEN REGRESSION
+
+        # get the between and within subjects variable combinations
+        BV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.between)}
+        WV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.within)}
+
+        # create the between-subjects data
+        GRP = self.source.copy().reset_index()
+        GRP.insert(0, "SBJ", self.source.index.to_numpy())
+        if len(self.between) > 0:
+            BV_src = GRP.groupby(self.between + ['SBJ'], as_index=False).mean()
+            BV_src.index = pd.Index(BV_src['SBJ'].values.flatten())
+            X = []
+            for i in BV_combs:
+                if i != "Intercept":
+                    X += [self.__contrasts__(pd.DataFrame(BV_src[i.split(":")]))]
+            X = pd.concat(X, axis=1)
+        else:
+            X = pd.DataFrame(index=GRP.groupby(['SBJ']).mean().index.to_numpy())
+
+        # create the within-subjects data
+        if len(self.within) > 0:
+            Z = GRP.groupby(self.within + ['SBJ']).mean().unstack(WV)[dv]
+            Z.columns = pd.Index([":".join(i[1:]) for i in Z.columns])
+            Z.index = X.index
+        else:
+            Z = pd.DataFrame(GRP[dv])
+            Z.index=BV_src.index
+            Z.columns=["Intercept"]
+
+        # perform the regression
+        LM = LinearRegression(Z, X)
+        B = LM.coefs
+        if len(BV) == 0:
+            B.index = pd.Index(["Intercept"])
+            LM.X.index = Z.index
+        Ix = np.atleast_2d([i.split(":") for i in B.columns.to_numpy()]).T
+        B.columns = pd.MultiIndex.from_arrays(Ix)
+        Ip = pd.DataFrame(np.eye(B.shape[0]), index=B.index, columns=B.index)
+        I = pd.DataFrame({'Intercept': np.tile(1, LM.X.shape[0])}, index=LM.X.index)
+        X = pd.concat([I, LM.X], axis=1)
+        V = pd.DataFrame(sl.solve(X.T.dot(X), Ip), index=B.index, columns=B.index)
+
+        # get the Sum of Squared Error Product Matrix
+        P = LM.predict(LM.X)
+        SSPE = (LM.Y - P).T.dot(LM.Y - P)
+        SSPE.index = B.columns
+        SSPE.columns = B.columns
+        
+        
+        #* TABLE GENERATION
+
+        # iterate the calculation of the stats
+        for i, w in enumerate(WV_combs):
+            
+            # design matrix
+            Pi = self.__design_matrix__(include_between=False)[w]
+            n, p = Pi.shape
+            Ii = pd.DataFrame(np.eye(p), index=Pi.columns, columns=Pi.columns)
+            PPi = sl.solve(Pi.T.dot(Pi), Ii)
+            PPi = pd.DataFrame(PPi, index=Pi.columns, columns=Pi.columns)
+
+            # Sum of Squared Errors Product matrix
+            SSPEi = Pi.T.dot(SSPE).dot(Pi)
+                
+            # coefs
+            Bi = B.dot(Pi)
+
+            # interaction with between-effects
+            for j, b in enumerate(BV_combs):
+
+                # hypothesis (used to deal with between-within relationship)
+                L = pd.DataFrame(Ip[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]).T
+                
+                # Sum of Squares Product matrix
+                K = L.dot(Bi)
+                S = sl.solve(L.dot(V).dot(L.T), np.eye(K.shape[0]))
+                S = pd.DataFrame(S, index=L.index, columns=L.index)
+                SSPi = K.T.dot(S).dot(K)
+
+                # Sum of squares
+                num_SS = np.sum(np.diag(SSPi.dot(PPi)))
+                den_SS = np.sum(np.diag(SSPEi.dot(PPi)))
+
+                # degrees of freedom
+                num_DF = p
+                den_DF = LM.DF * p
+
+                # get the label
+                label = b if w == "Intercept" else (w if b == "Intercept" else ":".join([b, w]))
+
+
+                #* EQUAL VARIANCE ASSUMPTION
+
+                # get the Brown-Forsythe test
+                cx = [np.tile('Brown-Forsythe', 3), ["Statistic", 'DF', 'P']]
+                C = pd.MultiIndex.from_arrays(cx)
+                if w != "Intercept" or b == "Intercept":
+                    ln = np.tile(None, 3)
+                else:
+                    BF = BrownForsythe(self.source, dv, b.split(":"), alpha, two_tailed)
+                    ln = [BF.value, (BF.DF_num, BF.DF_den), BF.p]
+                K = pd.DataFrame(ln, index=C, columns=[label]).T
+
+                
+                #* F TESTS
+
+                # standard F-tests
+                f = F(num_SS, num_DF, den_SS, den_DF, 1)
+                cx = [np.tile("F test", 6), ['SSn', 'SSd', 'Statistic', 'DF', 'Critical', 'P']]
+                ln = [f.SS_num, f.SS_den, f.value, (f.DF_num, f.DF_den), f.crit, f.p]
+                C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
+                K = pd.concat([K, pd.DataFrame(ln, index=C, columns=[label]).T], axis=1)
+
+
+                #* SPHERICITY MANAGEMENT
+
+                # John, Nagao and Sugiura’s sphericity test
+                cx = [np.tile("John, Nagao and Sugiura", 3), ['Statistic', 'DF', 'P']]
+                C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
+                if w == "Intercept":
+                    ln = np.tile(None, 3)
+                else:
+                    E = np.real(sl.eigvals(SSPEi.dot(PPi)))
+                    W = np.sum(E[E > 0]) ** 2 / np.sum(E[E > 0] ** 2)
+                    Q = n / 2 * (p - 1) ** 2 * (W - 1 / (p - 1))
+                    df = (p + 1) * p / 2 - 1
+                    pval = st.chi2.sf(Q, df)
+                    ln = [Q, df, pval]
+                K = pd.concat([K, pd.DataFrame(ln, index=C, columns=[label]).T], axis=1)
+
+                # Greenhouse-Geisser and Huynh-Feldt sphericity corrections
+                if w == "Intercept":
+                    GG = HF = None
+                else:
+                    GG = ((np.sum(E[E > 0]) / p) ** 2) / (np.sum(E[E > 0] ** 2) / p)
+                    HF = ((n + 1) * p * GG - 2) / (p * (n - p * GG))
+                for e, l in zip([GG, HF], ['Greenhouse-Geisser', 'Huynh-Feldt']):
+                    cx = [np.tile(l, 4), ['Statistic', 'DF', 'Critical', 'P']]
+                    C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
+                    if e is None:
+                        ln = np.tile(None, 4)
+                    else:
+                        f = F(num_SS, num_DF, den_SS, den_DF, e)
+                        ln = [f.value, (f.DF_num, f.DF_den), f.crit, f.p]
+                    K = pd.concat([K, pd.DataFrame(ln, index=C, columns=[label]).T], axis=1)
+
+                # append the table
+                table = table.append(K) 
+
+        # Effect sizes
+        cx = [np.tile("Eta squared", 3), ['Total', 'Partial', 'Generalized']]
+        C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
+        tot_SS = np.sum((Y.values.flatten() - np.mean(Y.values.flatten())) ** 2)
+        num_SS = self.table[('F test', 'SSn')]
+        den_SS = self.table[('F test', 'SSd')]
+        ln = [num_SS / tot_SS, num_SS / (num_SS + den_SS), num_SS / (num_SS + den_SS.sum())]
+        ES = pd.concat(ln, axis=1)
+        ES.columns = C
+        table = pd.concat([table, ES], axis=1)
+
+        # drop empty columns and return
+        return table.dropna(axis=1, how='all')
 
 
 
+    @property
+    def normality_table(self):
+        """
+        Return a table containing the Shapiro-Wilk test calculated from both the
+        residuals and all the model combinations.
+        """
+        cx = np.atleast_2d([np.tile("Shapiro-Wilk test", 2), ['Statistic', 'P']])
+        C = pd.MultiIndex.from_arrays(cx)
+        S = st.shapiro(self.residuals.values.flatten())
+        return pd.DataFrame(S, index=C, columns=['Residuals']).T
 
+
+
+    @property
+    def emmeans(self):
+        """
+        Return Estimated Marginal MEANS for each group combination along with T-tests
+        ("two-samples" for between-subjects comparisons and "paired" for "within-subjects")
+        and Holm-corrected p values.
+        """
+        
+        # obtain the predicted values from the model
+        T = self.source.copy()
+        T.loc[T.index, self.DV] = self.predict(self.X)
+
+        # pass the source to the descriptive statistics calculator
+        return self.__describe__(T)
     
 
-    def __regress__(self, source, groups, data):
+
+    @property
+    def descriptive(self):
         """
-        obtain regression residuals for the current group in source for each element of data.
+        Return descriptive statistics for each group combination along with T-tests
+        ("two-samples" for between-subjects comparisons and "paired" for "within-subjects")
+        and Holm-corrected p values.
+        """
+        return self.__describe__(self.source)
+
+
+
+    def copy(self):
+        """
+        return a copy of the current instance.
+        """
+        df = self.source
+        df.insert(0, 'SBJ', self.source.index.to_numpy())
+        return Anova(df, self.DV, self.IV, 'SBJ', self.alpha, self.two_tailed)
+
+
+
+    def __describe__(self, x):
+        """
+        Return descriptive statistics for each group combination along with T-tests
+        ("two-samples" for between-subjects comparisons and "paired" for "within-subjects")
+        and Holm-corrected p values.
+
+        Input:
+
+            x:  (pandas.DataFrame)
+                the dataframe containing the data.
+        
+        Output:
+            D:  (pandas.DataFrame)
+                the dataframe containing the descriptive statistics.
         """
         
+
+
+
+    def __combine__(self, x):
+        """
+        Internal function used to combine labels and return the groups combinations according to the
+        available data.
+
+        Input:
+
+            x:  (list)
+                a list of str.
+        
+        Output:
+
+            c:  (dict)
+                a dict with each factor combination as key and the corresponding factors as values.
+        """
+        return {":".join(j): 
+                self.__contrasts__(self.source[list(j)]).columns.to_numpy().tolist()
+                for i in np.arange(len(x)) + 1 for j in it.combinations(x, i)}
+
+
+
+    def __isBetween__(self, df):
+        """
+        Check whether the current parameter can be considered as a between-subjects variable.
+
+        Input:
+            df: (pandas.DataFrame)
+                The dataframe representing a variable.
+    
+        Output:
+            B:  (bool)
+                True if the variable can be handled as a betwee-subjects variable. False, otherwise.
+        """
+        for s in np.unique(df.index.to_numpy()):
+            if len(np.unique(df.loc[s].values.astype(str), axis=0)) > 1:
+                return False
+        return True
+
+
+
+    def __isCovariate__(self, df):
+        """
+        Check if the current variable can be considered as a covariate.
+
+        Input:
+            df: (pandas.DataFrame)
+                The dataframe representing a variable.
+    
+        Output:
+            C:  (bool)
+                True if the variable can be handled as a covariate. False, otherwise.
+        """
+        
+        # get the covariance types
+        cov_types = np.array([['float{}'.format(i), 'int{}'.format(i)] for i in [16, 32, 64]])
+        cov_types = cov_types.flatten().tolist()
+        
+        # if any of the columns in source are factors, the resulting variable will be a factor
+        return df.select_dtypes(cov_types).shape[1] == df.shape[1]
+
+
+
+    def __contrasts__(self, df, type="sum"):
+        """
+        create a dummy representation of a variable.
+        
+        Input:
+            df:     (pandas.DataFrame)
+                    a pandas dataframe where each column represents one component of a
+                    linear model variable.
+
+            type:   (str)
+                    any of "treat" or "sum". The former will have only 1 and 0.
+                    The latter, 1, 0 and -1.
+        
+        Output:
+            D:      (pandas.DataFrame)
+                    a dataframe containing dummy variables to represent the type
+                    of model.
+        """
+
+        # check the type
+        types = ['sum', 'treat']
+        assert np.any([type == i for i in types]), "'type' must be any of " + str(types)
+
         # get the groups combinations
-        C = [i for j in np.arange(len(groups)) + 1 for i in it.combinations(groups, j)]
+        D = {}
+        for prm in df.columns:
+            X = pd.DataFrame(df[prm])
+            X.index = df.index
 
-        # for each factor combination, get the corresponding sum of squares and degrees of freedom
-        D = pd.DataFrame()
-        for c in C:
+            # handle covariates
+            if self.__isCovariate__(X):
+                D[prm] = X
 
-
-            #* GET THE DUMMY FACTORS MATRIX
-
-            # get the univariate groups
-            GD = {}
-            for g in c:
+            # handle factors
+            else:
 
                 # get the groups combinations
-                G = np.unique(source[g].values.flatten())
-                I = [source.loc[source.isin([i]).any(1)].index.to_numpy() for i in G]
-                
+                G = np.unique(X.values.flatten())
+                I = [np.argwhere(X.values.flatten() == i).flatten() for i in G]
+                    
                 # get the dummy columns
-                dummy = np.zeros((source.shape[0], len(G) - 1))
-                GD[g] = pd.DataFrame(dummy, index=source.index, columns=[label for label in G[1:]])
-                
+                dummy = np.zeros((X.shape[0], len(G) - 1))
+                indices = np.arange(1, len(G)) if type == "treat" else np.arange(len(G) - 1)
+                cols = [label for label in G[indices]]
+                D[prm] = pd.DataFrame(dummy, index=df.index, columns=cols)
+                    
                 # fill the columns
-                for i in np.arange(1, len(I)):
-                   GD[g].loc[I[i], G[i]] = 1
+                for i in indices:
+                    D[prm][G[i]].iloc[I[i]] = 1
+                if type == "sum":
+                    D[prm].iloc[I[-1]] = -1
+
+        # combine the groups
+        G = [j for j in it.product(*[D[i].columns.to_numpy() for i in D], repeat=1)]
+        V = pd.concat([D[i] for i in D], axis=1)
+        F = {":".join(i): np.prod(V[[k for k in i]], axis=1).values.flatten() for i in G}
+        return pd.DataFrame(F, index=df.index)
+
+
+
+    def __design_matrix__(self, type="sum", include_between=True, include_within=True,
+                      include_covariates=True, include_intercept=True):
+        """
+        obtain the design matrix for every combination allowed by the available variables and
+        according to the selected contrasts type.
+
+        Input:
+            include_between:    (bool)
+                                Should between-factors be included in the matrix?
             
-            # combine the groups
-            C = [j for j in it.product(*[GD[i].columns.to_numpy() for i in GD], repeat=1)]
-            D = pd.concat([GD[i] for i in GD], axis=1)
-            F = {":".join(i): np.prod(D[[k for k in i]], axis=1).values.flatten() for i in C}
+            include_within:     (bool)
+                                Should within-factors be included in the matrix?
             
-            # return the dummy groups dataframe
-            dummy = pd.DataFrame(F, index=source.index.to_numpy())
+            include_covariates: (bool)
+                                Should covariates be included in the matrix?
 
+            include_intercept:  (bool)
+                                Should the intercept be included in the matrix?
+            
+            type:               (str)
+                                The type of contrasts to be provided. The options are "sum" or
+                                "treat".
 
-            #* EXTRACT THE SQUARES
-
-            for param in data:
-                Y = source[param].values
-                R = LinearRegression(Y, dummy.values)
-                Z = R.predict(dummy.values).flatten()
-                SSR = np.sum((Y - Z) ** 2)
-                SST = np.sum((Y - np.mean(Y.flatten())) ** 2)
-                SSE = SST - SSR
-                idx = pd.MultiIndex.from_tuples(list(zip(np.tile(param, 3), ["SSR", "SST", "DF"])))
-                col = [":".join(c)]
-                D = D.append(pd.DataFrame([SSR, SST, dummy.shape[1]], columns=col, index=idx))
+        Output:
+            K:                  (dict)
+                                a dict having each indipendent variable as key which maps a
+                                pandas dataframe containing the corresponding design matrix.                               
+        """
         
-        # return the regression squares for each parameter
-        return D
+        # check the type
+        types = ['sum', 'treat']
+        assert np.any([type == i for i in types]), "'type' must be any of " + str(types)
+
+        # check the requirements
+        req = {
+            "include_between": include_between,
+            "include_within": include_within,
+            "include_covariates": include_covariates,
+            "include_intercept": include_intercept
+        }
+        for i in req:
+            assert req[i] or not req[i], "{} must be a boolean.".format(i)
+        
+        # get the source factors combinations
+        C = []
+        IVs = []
+        cmb = [i for i in self.__combine__(self.IV)]
+        for i in cmb:
+            any_between = any_within = any_covariate = False
+            cols = i.split(":")
+            for j in cols:
+                k = pd.DataFrame(self.source[j])
+                if not any_between: 
+                    any_between = self.__isBetween__(k)
+                if not any_within:
+                    any_within = not self.__isBetween__(k)
+                if not any_covariate:
+                    any_covariate = self.__isCovariate__(k)
+            if ((include_between or not any_between) and
+                (include_within or not any_within) and
+                (include_covariates or not any_covariate)):
+                C += cols
+                IVs += [i]
+        C = np.unique(C)
+        S = np.atleast_2d(np.unique(self.source[C].values.astype(str), axis=0))
+        if S.shape[1] > 0:
+            I = pd.MultiIndex.from_arrays(S.T)
+        else:
+            I = pd.MultiIndex.from_arrays(np.atleast_2d([["Intercept", ]]))
+        S = pd.DataFrame(S, columns=C, index=I)
+        K = {}
+
+        # get the groups combinations
+        for i in IVs:
+            cols = i.split(":")
+            if np.all([np.any([c == j for c in C]) for j in cols]):
+                 K[i] = self.__contrasts__(pd.DataFrame(S[cols]), type=type)
+        
+        # handle the intercept requirement
+        if include_intercept:
+            K['Intercept'] = pd.DataFrame({'Intercept': np.tile(1, min(1, S.shape[0]))}, index=S.index)
+        
+        # return the desing matrices
+        return K
+
+
+
+    def __repr__(self):
+        return self.__str__()
+    
+
+
+    def __str__(self):
+        def_max_row = pd.get_option("display.max_rows")
+        def_precision = pd.get_option("precision")
+        pd.set_option("display.max_rows", 999)
+        pd.set_option("precision", 3)
+        O = "\n\n".join([self.table.__str__(), self.normality_test.__str__()])
+        pd.set_option("display.max_rows", def_max_row)
+        pd.set_option("precision", def_precision)
+        return O
