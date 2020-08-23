@@ -62,12 +62,43 @@ class LinearRegression():
             XX = np.hstack([np.ones((XX.shape[0], 1)), XX])
         
         # get the coefficients and intercept
-        self.coefs = pd.DataFrame(sl.inv(XX.T.dot(XX)).dot(XX.T).dot(self.Y),
-                                  index=self.__IV_labels__, columns=self.__DV_labels__)
+        self._coefs = pd.DataFrame(sl.inv(XX.T.dot(XX)).dot(XX.T).dot(self.Y),
+                                   index=self.__IV_labels__, columns=self.__DV_labels__)
 
 
 
     @property
+    def coefs(self):
+        """
+        vector of the regression coefficients.
+        """
+        return self._coefs
+
+
+
+    def SSPE(self):
+        """
+        return the Sum of Square Product Error matrix
+        """
+        R = self.residuals()
+        return R.T.dot(R)
+
+
+
+    def cov_unscaled(self):
+        """
+        return the unscaled covariance (i.e. without multiplication for the variance term)
+        of the coefficients.
+        """
+        if self.fit_intercept:
+            I = pd.DataFrame({'Intercept': np.tile(1, self.X.shape[0])}, index=self.X.index)
+            X = pd.concat([I, self.X], axis=1)
+        else:
+            X = self.X
+        return pd.DataFrame(sl.inv(X.T.dot(X)), index=X.columns, columns=X.columns)
+
+
+
     def residuals(self):
         """
         obtain the residuals of the current regression model.
@@ -187,7 +218,6 @@ class LinearRegression():
 
 
 
-    @property
     def DF(self):
         """
         return the degrees of freedom of the model.
@@ -195,7 +225,7 @@ class LinearRegression():
         return self.Y.shape[0] - self.coefs.shape[0]
 
 
-    @property
+
     def SS(self):
         """
         calculate the sum of squares of the fitted model.
@@ -205,7 +235,6 @@ class LinearRegression():
 
 
 
-    @property
     def R2(self):
         """
         calculate the R-squared of the fitted model.
@@ -214,21 +243,19 @@ class LinearRegression():
 
 
 
-    @property
     def R2_adjusted(self):
         """
         calculate the Adjusted R-squared of the fitted model.
         """
-        return 1 - (1 - self.R2) * (self.Y.shape[0] - 1) / (len(self.Y) - self.DF - 1)
+        return 1 - (1 - self.R2) * (self.Y.shape[0] - 1) / (len(self.Y) - self.DF() - 1)
 
 
 
-    @property
     def RMSE(self):
         """
         Get the Root Mean Squared Error
         """
-        return np.sqrt(np.mean(self.residuals ** 2, 0))
+        return np.sqrt(np.mean(self.residuals() ** 2, 0))
 
 
 
