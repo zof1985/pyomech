@@ -1459,9 +1459,10 @@ class Anova(LinearRegression):
         
         # get the degrees of freedom
         df = pd.DataFrame()
-        DFd = pd.DataFrame()
+        DFd = pd.DataFrame({e: np.tile(self.effects[e].DFd, Li.shape[0]) for e in self.effects}, index=Li.index)
         for e in self.effects:
-            D = [pd.DataFrame(M.sum(1))
+            N = M[P.columns].sum(1) ** 2
+            D = (M[P.columns] ** 2 / self.effects[e].DFd).sum(1)
             D.columns = pd.Index([e])
             df = pd.concat([df, D], axis=1)
             F = D.copy()
