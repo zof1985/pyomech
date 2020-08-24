@@ -103,6 +103,77 @@ def split_data(source, data, groups):
 
 
 
+def p_adjust(p):
+    """
+    return adjusted p-values using different approaches.
+
+    Input:
+        p:  (list)
+            list of uncorrected p-values 
+    
+    Output:
+        D:  (pandas.DataFrame)
+            a dataframe containing the corrected p-values using:
+                - Bonferroni
+                - Sidak
+                - Holm-Bonferroni
+                - Holm-Sidak
+    
+    References:
+        Abdi H., (2010) Encyclopedia of Research Design. Sage. Thousand Oaks, CA.
+    """
+
+    # check the entries
+    p = np.array([p]).flatten()
+    C = len(p)
+    I = np.argsort(p)
+        
+    # generate the dataframe
+    D = pd.DataFrame({'Uncorrected': p}, index=np.arange(C) + 1)
+    D.insert(D.shape[1], "Bonferroni", C * p)
+    D.insert(D.shape[1], "Sidak", 1 - (1 - p) ** C)
+    D.insert(D.shape[1], "Holm-Bonferroni", (C - I) * p)
+    D.insert(D.shape[1], "Holm-Sidak", 1 - (1 - p) ** (C - I))
+
+    # return
+    return D
+
+
+
+def describe(x):
+    """
+    provide descriptive and distribution statistics for x.
+
+    Input:
+
+        x:  (list)
+            a numeric 1D array.
+    
+    Output:
+
+        D:  (pandas.DataFrame)
+            a row dataframe containing several descriptive statistics about x.
+    """
+
+    # get the descriptive stats
+    N = len(x)
+    avg = np.mean(x)
+    std = np.std(x)
+    prc = np.quantile(x, [0.25, 0.50, 0.75])
+    dmn = np.min(x)
+    dmx = np.max(x)
+    skw = np.sum((x - avg) ** 3) / ((N - 1) * (std ** 3))
+    krt = np.sum((x - avg) ** 4) / (std ** 4)
+    krt = krt * N * (N + 1) / (N - 1) / (N - 2) / (N - 3)
+    W, p = st.shapiro(x)
+
+    # return the output
+    return pd.DataFrame({'N': [N], 'Mean': [avg], 'SD': [std], 'Min': [dmn],
+                         '25Q': [prc[0]], '50Q': [prc[1]], '75Q': [prc[2]], 'Max': [dmx],
+                         'Skewness': [skw], 'Kurtosis': [krt], 'Shapiro-Wilk': [W], 'P': [p]})
+
+
+
 ########    GENERAL CLASSES    ########
 
 
@@ -980,7 +1051,7 @@ class AnovaEffect():
         self.SSPE = design.T.dot(BW.SSPE()).dot(design)
         self.SSd = np.sum(np.diag(self.SSPE.dot(self.__PPi__)))
         self.DFd = n * p
-        
+    
 
 
     def F_test(self, eps=1, alpha=0.05, two_tailed=True):
@@ -1007,11 +1078,11 @@ class AnovaEffect():
         f = F(self.SSn, self.DFn, self.SSd, self.DFd, eps, alpha, two_tailed)
 
         # index
-        cx = [np.tile("F test", 6), ['SSn', 'SSd', 'Statistic', 'DF', 'Critical', 'P']]
+        cx = [np.tile("F test", 7), ['SSn', 'SSd', 'Statistic', 'DFn', 'DFd', 'Critical', 'P']]
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # dataframe
-        ln = [f.SS_num, f.SS_den, f.value, (f.DF_num, f.DF_den), f.crit, f.p]
+        ln = [f.SS_num, f.SS_den, f.value, f.DF_num, f.DF_den, f.crit, f.p]
         return pd.DataFrame(ln, index=C, columns=[self.label]).T
 
 
@@ -1055,16 +1126,16 @@ class AnovaEffect():
         #* GREENHOUSE-GEISSER SPHERICITY CORRECTION
         
         # index
-        cx = [np.tile("Greenhouse-Geisser", 4), ['Epsilon', 'DF', "Crit", 'P']]
+        cx = [np.tile("Greenhouse-Geisser", 5), ['Epsilon', 'DFn', "DFd", "Crit", 'P']]
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
         if self.label == "Intercept" or self.isBetween:
-            ln = np.tile(None, 4)
+            ln = np.tile(None, 5)
         else:
             gg_eps = self.epsilon_GG()
             gg_f = F(self.SSn, self.DFn, self.SSd, self.DFd, gg_eps, alpha, two_tailed)
-            ln = [gg_eps, gg_f.df, gg_f.crit, gg_f.p]
+            ln = [gg_eps, gg_f.df[0],  gg_f.df[1], gg_f.crit, gg_f.p]
         
         # dataframe
         gg = pd.DataFrame(ln, index=C, columns=[self.label]).T
@@ -1073,16 +1144,16 @@ class AnovaEffect():
         #* HUYNH-FELDT SPHERICITY CORRECTION
         
         # index
-        cx = [np.tile("Huynh-Feldt", 4), ['Epsilon', 'DF', "Crit", 'P']]
+        cx = [np.tile("Huynh-Feldt", 5), ['Epsilon', 'DFn', "DFd", "Crit", 'P']]
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
         if self.label == "Intercept" or self.isBetween:
-            ln = np.tile(None, 4)
+            ln = np.tile(None, 5)
         else:
             hf_eps = self.epsilon_HF()
             hf_f = F(self.SSn, self.DFn, self.SSd, self.DFd, hf_eps, alpha, two_tailed)
-            ln = [hf_eps, hf_f.df, hf_f.crit, hf_f.p]
+            ln = [hf_eps, hf_f.df[0], hf_f.df[1], hf_f.crit, hf_f.p]
         
         # dataframe
         hf = pd.DataFrame(ln, index=C, columns=[self.label]).T
@@ -1122,15 +1193,15 @@ class AnovaEffect():
         """
 
         # index
-        cx = [np.tile('Brown-Forsythe', 4), ["Statistic", 'DF', "Crit", 'P']]
+        cx = [np.tile('Brown-Forsythe', 5), ["Statistic", 'DFn', "DFd", "Crit", 'P']]
         C = pd.MultiIndex.from_arrays(cx)
         
         # values
         if not self.isBetween:
-            ln = np.tile(None, 4)
+            ln = np.tile(None, 5)
         else:
             BF = BrownForsythe(self.source, self.DV, self.IV, alpha, two_tailed)
-            ln = [BF.value, (BF.DF_num, BF.DF_den), BF.crit, BF.p]
+            ln = [BF.value, BF.DF_num, BF.DF_den, BF.crit, BF.p]
         
         # return the dataframe
         return pd.DataFrame(ln, index=C, columns=[self.label]).T
@@ -1375,9 +1446,19 @@ class Anova(LinearRegression):
 
 
 
-    def anova_table(self):
+    def anova_table(self, digits=4):
         """
         Return a pandas.DataFrame containing the Anova analysis of the entered model.
+
+        Input:
+
+            digits: (int)
+                    the number of decimals to be used in representing the outcomes.
+
+        Output:
+
+            D:      (pandas.DataFrame)
+                    a dataframe containing all the outcomes.
         """
         
         # get the total error SS to calculate the generalized effect sizes
@@ -1390,39 +1471,170 @@ class Anova(LinearRegression):
                         self.effects[e].sphericity_test(), self.effects[e].effect_sizes(SSe)]
             table = table.append(pd.concat(contents, axis=1))
 
-        # drop empty columns and return
-        return table.dropna(axis=1, how='all')
+        # drop empty columns
+        table = table.dropna(axis=1, how='all')
+        
+        # return the outcomes rounded to the desired decimal
+        return table.apply(self.__rnd__, decimals=digits)
 
 
 
-    def normality_table(self):
+    def descriptive_table(self, digits=4):
         """
-        Return a table containing the Shapiro-Wilk test calculated from both the
+        Return a table containing several descriptive statistics calculated from both the
         residuals and all the model combinations.
+        If any covariate exists in the model, fixed values are used to obtain descriptive stats.
+        
+        Input:
+
+            digits: (int)
+                    the number of decimals to be used in representing the outcomes.
+
+        Output:
+
+            D:      (pandas.DataFrame)
+                    a dataframe containing all the outcomes.
         """
-        cx = np.atleast_2d([np.tile("Shapiro-Wilk test", 2), ['Statistic', 'P']])
-        C = pd.MultiIndex.from_arrays(cx)
-        S = st.shapiro(self.residuals().values.flatten())
-        return pd.DataFrame(S, index=C, columns=['Residuals']).T
+
+        # get descriptive and marginal means stats
+        M = pd.DataFrame()
+        D = pd.DataFrame()
+        for e in [i for i in self.effects if i != "Intercept"]:
+            
+            # get the linear function and the scaled covariance matrix for the effect
+            L = self.__linfun__(self.effects[e])
+            V = self.__cov_scaled__(self.effects[e])
+
+            # get the emmeans but keep only the columns of insterest
+            emm_cols = ["Estimate", "Standard error",
+                        "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
+                        "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))]
+            em = self.__emmeans__(L, V, self.effects[e].DFd)[emm_cols]
+            ex = np.atleast_2d([[e, i] for i in em.index])
+            em.index = pd.MultiIndex.from_arrays(ex.T)
+
+            # store the marginal means
+            M = M.append(em)
+
+            # get the unique combinations for each effect
+            combs = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
+
+            # get the data corresponding to each combination
+            for c in combs:
+
+                # data
+                dv = self.source.loc[self.source[e.split(":")].isin(c).all(1)][self.DV].values.flatten()
+
+                # get the descriptive stats
+                K = describe(dv)
+                K.index = pd.MultiIndex.from_arrays(np.atleast_2d([[e, ":".join(c)]]).T)
+                D = D.append(K)
+        
+        # get descriptive statistics of the residuals
+        R = describe(self.residuals().values.flatten())
+        R.index = pd.MultiIndex.from_arrays(np.atleast_2d([["Residuals", ""]]).T)
+        D = D.append(R)
+
+        # adjust the column index
+        C = [["Descriptive stats", i] for i in D.columns]
+        D.columns = pd.MultiIndex.from_arrays(np.atleast_2d(C).T)
+        F = [["Estimated Marginal Means", i] for i in M.columns]
+        M.columns = pd.MultiIndex.from_arrays(np.atleast_2d(F).T)
+
+        # merge and return
+        G = pd.concat([D, M], axis=1)
+        return G.apply(self.__rnd__, decimals=digits)
 
 
 
-    def emm_table(self):
+    def contrasts_table(self, digits=4):
         """
-        Return Estimated Marginal MEANS for each group combination.
+        Return pairwise contrasts based on estimated marginal means for each effect.
+
+        Input:
+
+            digits: (int)
+                    the number of decimals to be used in representing the outcomes.
+
+        Output:
+
+            D:      (pandas.DataFrame)
+                    a dataframe containing all the outcomes.
         """
 
         # iterate each effect
-        effects = [i for i in self.effects if i != "Intercept"]
-        self.emmeans = {e: self.__emmeans__(self.effects[e]) for e in effects}
-        check = 1
+        EM = pd.DataFrame()
+        for e in [i for i in self.effects if i != "Intercept"]:
+            
+            # get the linear function and the scaled covariance matrix for the effect
+            L = self.__linfun__(self.effects[e])
+            V = self.__cov_scaled__(self.effects[e])
+
+            # obtain the contrast matrix
+            J = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
+            M = pd.DataFrame(index=L.index)
+            for i, j in enumerate(J[:-1]):
+                for z in J[(i + 1):]:
+
+                    # check if the actual combination is a required contrast
+                    if np.sum([1 if k != f else 0 for k, f in zip(j, z)]) == 1:
+
+                        # create the contrast
+                        col = " - ".join([":".join(j), ":".join(z)])
+                        cmj = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=[col])
+                        cmj.loc[":".join(j)] = 1
+                        cmj.loc[":".join(z)] = -1
+                    
+                        # add the contrast
+                        M = pd.concat([M, cmj], axis=1)
+            
+            # adjust the linear function for the contrasts
+            C = M.T.dot(L)
+
+            # get the emmeans but keep only the columns of insterest
+            emm_cols = ["Estimate", "Standard error",
+                        "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
+                        "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha)),
+                        "T stat", "DF", "T crit", "P", "P adj. (Holm-Sidak)"]
+            em = self.__emmeans__(C, V, self.effects[e].DFd)[emm_cols]
+            ix = np.atleast_2d([[e, i] for i in em.index])
+            em.index = pd.MultiIndex.from_arrays(ix.T)
+
+            # store the output
+            EM = EM.append(em)
+        
+        # return the outcomes rounded to the desired decimal
+        return EM.apply(self.__rnd__, decimals=digits)
 
 
 
-    def __emmeans__(self, E):
+    def __rnd__(self, x, decimals=4):
         """
-        return the estimated marginal means for an effect given through its linear function and its
-        scaled covariance matrix.
+        internal function used to round values.
+
+        Input:
+            
+            x:          (object)
+                        an object to be rounded
+
+            decimals:   (int)
+                        the number of decimals.
+        
+        Output:
+
+            r:  (object)
+                the object rounded (where possible) or the same object entered, otherwise.
+        """
+        try:
+            return np.around(x, decimals)
+        except Exception:
+            return x
+
+
+
+    def __linfun__(self, E):
+        """
+        get the linear function corresponding to the given effect.
         
         Input:
             E:  (AnovaEffect)
@@ -1430,9 +1642,9 @@ class Anova(LinearRegression):
 
         Output:
             M:  (pandas.DataFrame)
-                a dataframe containing the emmeans for the effect.
+                a dataframe containing the linear function for the effect.
         """
-
+        
         # obtain the linear function
         I = np.unique(self.source[E.label.split(":")].values.astype(str), axis=0)
         I = pd.Index([":".join(i) for i in I])
@@ -1440,39 +1652,78 @@ class Anova(LinearRegression):
         L = pd.DataFrame(np.zeros((len(I), len(C))), index=I, columns=C)
         P = self.__design_matrix__(self.source[E.label.split(":")], E.label, include_intercept=True)
         L.loc[P.index, P.columns] = P.values
+        return L
+
+
+
+    def __cov_scaled__(self, E):
+        """
+        return the coefficients covariance matrix scaled by the mean error of the effect.
+        
+        Input:
+            E:  (AnovaEffect)
+                The effect about which the emmeans have to be calculated.
+
+        Output:
+            M:  (pandas.DataFrame)
+                a dataframe containing the covariance matrix scaled on the effect.
+        """ 
 
         # get the scaled covariance matrix
         V = self.cov_unscaled()
         Ic = self.effects["Intercept"].SSd / self.effects["Intercept"].DFd
         V.loc["Intercept", "Intercept"] *= Ic
-        C = pd.Index([i for i in P.columns if i != "Intercept"])
-        V.loc[C, C] *= (E.SSd / E.DFd)
-        M = L.dot(V) * L
+        if E.label != "Intercept":
+            C = E.__PPi__.columns
+            V.loc[C, C] *= (E.SSd / E.DFd)
+        return V
+
+
+
+    def __emmeans__(self, L, V, D):
+        """
+        return the estimated marginal means for an effect given through its linear function and its
+        scaled covariance matrix.
+        
+        Input:
+            
+            L:  (pandas.DataFrame)
+                the dataframe containing the linear function of an effect. Typically it is the output
+                of the __linfun__ function.
+            
+            V:  (pandas.DataFrame)
+                the dataframe containing the covariance matrix of the coefficients scaled by the
+                error of an effect. Typically it is the output of the __cov_scaled__ function.
+
+            D:  (float)
+                the degrees of freedom of the error term of the effect.
+
+        Output:
+            M:  (pandas.DataFrame)
+                a dataframe containing the emmeans for the effect.
+        """
 
         # get the estimates
         em = L.dot(self.coefs).T
         em.index = pd.Index(['Estimate'])
             
         # obtain the standard errors
+        M = L.dot(V) * L
         se = pd.DataFrame(M.sum(1)).T.apply(np.sqrt)
         se.index = pd.Index(['Standard error'])
-        
-        # get the degrees of freedom
-        df = pd.DataFrame()
-        DFd = pd.DataFrame({e: np.tile(self.effects[e].DFd, Li.shape[0]) for e in self.effects}, index=Li.index)
+
+        # get the degrees of freedom used to calculate confidence intervals
+        dfN = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=["DFc"])
+        dfD = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=["DFc"])
         for e in self.effects:
-            N = M[P.columns].sum(1) ** 2
-            D = (M[P.columns] ** 2 / self.effects[e].DFd).sum(1)
-            D.columns = pd.Index([e])
-            df = pd.concat([df, D], axis=1)
-            F = D.copy()
-            F.loc[F.index] = self.effects[e].DFd
-            DFd = pd.concat([DFd, F], axis=1)
-        df = pd.DataFrame((df.sum(1) ** 2) / (df ** 2 / DFd).sum(1)).T
-        df.index = pd.Index(["DF"])
+            ii = self.effects[e].__PPi__.columns
+            dfe = self.effects[e].DFd
+            dfN += pd.DataFrame(pd.DataFrame(M[ii]).sum(1), columns=["DFc"])
+            dfD += pd.DataFrame(pd.DataFrame(M[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
+        dfc = (dfN ** 2 / dfD).T
                             
         # critical T value
-        tc = df.copy()
+        tc = dfc.copy()
         al = self.alpha * (0.5 if self.two_tailed else 1)
         for t in tc:
             tc.loc[tc.index, t] = st.t.isf(al, tc.loc[tc.index, t])
@@ -1485,125 +1736,31 @@ class Anova(LinearRegression):
             c = tc.loc[tc.index, t].values * se.loc[se.index, t].values
             ci_inf.loc[ci_inf.index, t] = em.loc[em.index, t].values - c
             ci_sup.loc[ci_sup.index, t] = em.loc[em.index, t].values + c
-        ci_inf.index = pd.Index(["{:0.0f}% inf C.I.".format(100 * (1 - self.alpha))])
-        ci_sup.index = pd.Index(["{:0.0f}% sup C.I.".format(100 * (1 - self.alpha))])
+        ci_inf.index = pd.Index(["{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha))])
+        ci_sup.index = pd.Index(["{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))])
 
         # T value
         tv = em.copy() / se.values
         tv.index = pd.Index(['T stat'])
+        
+        # get the effect degrees of freedom
+        df = dfc.copy()
+        df.loc[df.index] = D
+        df.index = pd.Index(["DF"])
 
         # get the test p values
         pv = tv.copy()
         for t in tv:
-            pv.loc[pv.index, t] = st.t.sf(tv.loc[tv.index, t], df.loc[df.index, t])
+            v = abs(tv.loc[tv.index, t]) if self.two_tailed else tv.loc[tv.index, t]
+            pv.loc[pv.index, t] = st.t.sf(v, df.loc[df.index, t])
         pv.index = pd.Index(['P'])
 
-        # get the effect degrees of freedom
-        dfd = df.copy()
-        dfd.loc[dfd.index] = E.DFd
+        # get the corrected p-values
+        pa = p_adjust(pv.values.flatten())["Holm-Sidak"].values
+        pa = pd.DataFrame(pa, index=L.index, columns=["P adj. (Holm-Sidak)"]).T
 
         # return the table
-        pd.concat([em, se, df, tc, ci_inf, ci_sup, tv, dfd, tc, pv], axis=0).T
-
-
-    def emm_contrasts_table(self):
-        """
-        Return pairwise contrasts based on estimated marginal means for each effect.
-        """
-
-        # get the covariance matrix scaled by the MS of the errors
-        # in addition, obtain the variance of the effect and the error
-        # degrees of freedom.
-        V = self.cov_unscaled()
-        D = pd.DataFrame(index=pd.Index(["DF"]))
-        S = pd.DataFrame(index=pd.Index(["DF"]))
-        for e in self.effects:
-            D.insert(D.shape[1], e, [self.effects[e].DFd])
-            MSE = self.effects[e].SSd / self.effects[e].DFd
-            idx = self.effects[e].__PPi__.columns
-            V.loc[idx, idx] *= MSE
-            S.insert(S.shape[1], e, [np.mean(np.mean(V.loc[idx, idx]))])
-        
-        # get the degrees of freedom
-        ddf = (np.sum(S.values) ** 2) / np.sum((S.values ** 2) / D.values)
-
-        # iterate each effect
-        effects = [i for i in self.effects if i != "Intercept"]
-        self.emmeans = {}
-        for e in effects:
-            
-            # obtain the linear function
-            I = np.unique(self.source[e.split(":")].values.astype(str), axis=0)
-            I = pd.Index([":".join(i) for i in I])
-            C = self.coefs.index
-            L = pd.DataFrame(np.zeros((len(I), len(C))), index=I, columns=C)
-            P = self.__design_matrix__(self.source[e.split(":")], e, include_intercept=True)
-            C = pd.Index([i for i in P.columns if i != "Intercept"])
-            L.loc[P.index, P.columns] = P.values
-            
-            # get the estimates
-            em = L.dot(self.coefs).T
-            em.index = pd.Index(['Estimate'])
-            
-            # obtain the standard errors
-            se = pd.DataFrame((L.dot(V) * L).sum(1)).T.apply(np.sqrt)
-            se.index = pd.Index(['Standard error'])
-            
-            # TODO get the degrees of freedom
-            """
-            df = se.copy()
-            df.index = pd.Index(["DF"])
-            df.loc[df.index] = np.atleast_2d(ddf)
-                            
-            # critical T value
-            tc = df.copy()
-            al = self.alpha * (0.5 if self.two_tailed else 1)
-            for t in tc:
-                tc.loc[tc.index, t] = st.t.isf(al, tc.loc[tc.index, t])
-            tc.index = pd.Index(['T crit'])
-
-            # confidence intervals
-            ci = em.copy()
-            for t in ci:
-                c = tc.loc[tc.index, t].values * se.loc[se.index, t].values * np.array([-1, 1])
-                ci.loc[ci.index, t] = "{}-{}".format(*(em.loc[em.index, t].values + c).tolist())
-            ci.index = pd.Index(["{:0.0f}% C.I.".format(100 * (1 - self.alpha))])
-
-            # create the ref table
-            self.emmeans[e] = pd.concat([em, se, tv, df, tc, ci], axis=0).T
-            """
-            # obtain the contrast matrix
-            J = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
-            M = pd.DataFrame(index=P.index)
-            for i, j in enumerate(J[:-1]):
-                for z in J[(i + 1):]:
-                    col = " - ".join([":".join(j), ":".join(z)])
-                    cmj = pd.DataFrame(np.zeros((P.shape[0], 1)), index=P.index, columns=[col])
-                    cmj.loc[":".join(j)] = 1
-                    cmj.loc[":".join(z)] = -1
-                    M = pd.concat([M, cmj], axis=1)
-            
-            # get the linear function for the contrasts
-            Lc = M.T.dot(L)
-
-
-    def descriptive(self):
-        """
-        Return descriptive statistics for each group combination along with T-tests
-        ("two-samples" for between-subjects comparisons and "paired" for "within-subjects")
-        and Holm-corrected p values.
-        """
-        return self.__describe__(self.source)
-
-
-
-    def copy(self):
-        """
-        return a copy of the current instance.
-        """
-        df = self.source
-        df.insert(0, 'SBJ', self.source.index.to_numpy())
-        return Anova(df, self.DV, self.IV, 'SBJ', self.alpha, self.two_tailed)
+        return pd.concat([em, se, ci_inf, ci_sup, dfc, tv, df, tc, pv, pa], axis=0).T
 
 
 
@@ -1791,89 +1948,7 @@ class Anova(LinearRegression):
         
         # return the desing matrices
         return K
-    '''
-    def __design_matrix__(self, type="sum", include_between=True, include_within=True,
-                          include_covariates=True, include_intercept=True):
-        """
-        obtain the design matrix for every combination allowed by the available variables and
-        according to the selected contrasts type.
 
-        Input:
-            include_between:    (bool)
-                                Should between-factors be included in the matrix?
-            
-            include_within:     (bool)
-                                Should within-factors be included in the matrix?
-            
-            include_covariates: (bool)
-                                Should covariates be included in the matrix?
-
-            include_intercept:  (bool)
-                                Should the intercept be included in the matrix?
-            
-            type:               (str)
-                                The type of contrasts to be provided. The options are "sum" or
-                                "treat".
-
-        Output:
-            K:                  (dict)
-                                a dict having each indipendent variable as key which maps a
-                                pandas dataframe containing the corresponding design matrix.                               
-        """
-        
-        # check the type
-        types = ['sum', 'treat']
-        assert np.any([type == i for i in types]), "'type' must be any of " + str(types)
-
-        # check the requirements
-        req = {
-            "include_between": include_between,
-            "include_within": include_within,
-            "include_covariates": include_covariates,
-            "include_intercept": include_intercept
-        }
-        for i in req:
-            assert req[i] or not req[i], "{} must be a boolean.".format(i)
-        
-        # get the source factors combinations
-        C = []
-        IVs = []
-        cmb = [i for i in self.__combine__(self.IV)]
-        for i in cmb:
-            any_between = any_within = any_covariate = False
-            cols = i.split(":")
-            for j in cols:
-                k = pd.DataFrame(self.source[j])
-                if not any_between: 
-                    any_between = self.__isBetween__(k)
-                if not any_within:
-                    any_within = not self.__isBetween__(k)
-                if not any_covariate:
-                    any_covariate = self.__isCovariate__(k)
-            if ((include_between or not any_between) and
-                (include_within or not any_within) and
-                (include_covariates or not any_covariate)):
-                C += cols
-                IVs += [i]
-        C = np.unique(C)
-        S = np.atleast_2d(np.unique(self.source[C].values.astype(str), axis=0))
-        S = pd.DataFrame(S, columns=C, index=pd.MultiIndex.from_arrays(S.T))
-
-        # get the groups combinations
-        K = {}
-        for i in IVs:
-            cols = i.split(":")
-            if np.all([np.any([c == j for c in C]) for j in cols]):
-                K[i] = self.__contrasts__(pd.DataFrame(S[cols]), type=type)
-        
-        # handle the intercept requirement
-        if include_intercept:
-            ix = K[IVs[0]].index
-            K['Intercept'] = pd.DataFrame({'Intercept': np.tile(1, min(1, S.shape[0]))}, index=ix)
-        
-        # return the desing matrices
-        return K
-    '''
 
 
     def __repr__(self):
