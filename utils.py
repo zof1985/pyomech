@@ -174,16 +174,20 @@ def lvlup(file):
 
 
 
-def to_excel(P, D, N="Sheet1", new_file=False):
+def to_excel(P, D, N="Sheet1", keep_index=True, new_file=False):
 	"""
 	a shorthand function to save a pandas dataframe to an excel file
 
 	Input
+		
 		P: (str)
 			the path to the file where to store the file.
 
 		D: (DataFrame)
 			a dataframe.
+
+		keep_index: (boolean)
+			if True, the dataframe index is preserved. Otherwise it is ignored.
 
 		new_file: (boolean)
 			if True, a completely new file will be created.
@@ -211,15 +215,30 @@ def to_excel(P, D, N="Sheet1", new_file=False):
 		pass
 	sh = wb.create_sheet(N)
 
-	# update the data
-	V = D.values
-	[R, C] = V.shape
-
 	# write the headers
-	[sh.cell(1, i + 1, v) for i, v in enumerate(D.columns.tolist())]
+	[R, C] = D.shape
+	if keep_index:
+		index = np.atleast_2d(D.index.tolist())
+		data_cols = index.shape[1] + 1
+	else:
+		data_cols = 1
+	header = np.atleast_2d(D.columns.tolist())
+	data_rows = header.shape[1] + 1
+	for i, col in enumerate(header):
+		for j, el in enumerate(col):
+			ch = data_cols + i
+			rh = 1 + j
+			sh.cell(rh, ch, el)
+	if keep_index:
+		for i, row in enumerate(index):
+			for j, el in enumerate(row):
+				ri = data_rows + i
+				ci = 1 + j
+				sh.cell(ri, ci, el)
 
 	# write the data
-	[sh.cell(r + 2, c + 1, V[r, c]) for r in range(R) for c in range(C)]
+	V = D.values
+	[sh.cell(data_rows + r, data_cols + c, V[r, c]) for r in range(R) for c in range(C)]
 
 	# save data
 	wb.save(P)
