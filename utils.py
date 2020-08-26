@@ -219,10 +219,14 @@ def to_excel(P, D, N="Sheet1", keep_index=True, new_file=False):
 	[R, C] = D.shape
 	if keep_index:
 		index = np.atleast_2d(D.index.tolist())
+		if index.shape[0] == 1:
+			index = index.T
 		data_cols = index.shape[1] + 1
 	else:
 		data_cols = 1
 	header = np.atleast_2d(D.columns.tolist())
+	if header.shape[0] == 1:
+		header = header.T
 	data_rows = header.shape[1] + 1
 	for i, col in enumerate(header):
 		for j, el in enumerate(col):
