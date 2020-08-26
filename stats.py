@@ -14,6 +14,7 @@ import scipy.stats as st
 import scipy.linalg as sl
 import warnings
 from .regression import LinearRegression
+from scipy.special import factorial
 
 
 
@@ -618,12 +619,10 @@ class F(Test):
                                 p=v, name="F test")
         
         # add some additional parameters
-        self.SS_num = SS_num
-        self.DF_num = DF_num
-        self.MS_num = MS_num
-        self.SS_den = SS_den
-        self.DF_den = DF_den
-        self.MS_den = MS_den
+        self.SSn = SS_num
+        self.MSn = MS_num
+        self.SSd = SS_den
+        self.MSd = MS_den
         self.eps = eps
 
 
@@ -1291,7 +1290,7 @@ class Anova(LinearRegression):
 
 
 
-    def __init__(self, source, dv, iv, subjects=None, alpha=0.05, two_tailed=True):
+    def __init__(self, source, dv, iv, subjects=None, alpha=0.05, two_tailed=True, n_perm=0, exclude=[]):
         """
         Generate an Anova class object.
 
@@ -1305,7 +1304,7 @@ class Anova(LinearRegression):
             iv:             (list)
                             the list of column names containing the indipendent variables.
                                     
-            subjects:       (list or None)
+            subjects:       (str or None)
                             If none, the factors are treated as "between-only" factors. Conversely,
                             if a list or a 1D ndarray is provided, the values are used to define
                             within-subjects errors.
@@ -1316,6 +1315,25 @@ class Anova(LinearRegression):
 
             two_tailed:     (bool)
                             should the p-value be calculated from a two-tailed distribution?
+            
+            n_perm:         (int)
+                            the number of permutations to be used for drawing the test Probability
+                            Density Function (PDF).
+                            If 0 (Default) p values of the F tests are calculated using the F
+                            distribution with degrees of freedom calculated from data.
+                            If -1, all possible permutations of the the available data are used to
+                            obtain the PDF which, in turn, is used to calculated the p values.
+                            Please note that this setting might result in an EXTREMELY long
+                            computational time.
+                            If a positive int is provided, the PDF is obtained throught the given
+                            number of random permutations.
+            
+            exclude:        (list)
+                            a list of str objects defining the effects which should not be part of
+                            the model. This is useful the user aims at excluding specific main or
+                            interaction effects from the model. Please note that the interaction
+                            effects must be provided as the names of the effects involved separated
+                            by a ":". E.g. --> Main effects: "A", "B" --> Interaction: "A:B"
         """
         
         #* DATA PREPARATION
@@ -1324,18 +1342,24 @@ class Anova(LinearRegression):
         assert isinstance(source, pd.DataFrame), "source must be a pandas.DataFrame instance."
         assert isinstance(iv, list), "'iv' must be a list instance."
         assert isinstance(dv, list), "'dv' must be a list instance."
-        assert len(dv) >= 1, "'dv' must be non-empty."
+        source_missing = "{} not found in 'source'."
         for i in iv + dv:
-            assert np.any([i == j for j in source]), "{} not found in 'source'.".format(i)
+            assert np.any([i == j for j in source]), source_missing.format(i)
         self.DV = dv
         self.IV = iv
+
+        # check alpha
+        assert isinstance(alpha, float), "alpha must be a float in the (0, 1) range."
+        assert alpha > 0 and alpha < 1, "alpha must be a float in the (0, 1) range."
         self.alpha = alpha
-        self.two_tailed = two_tailed
         
+        # check two_tailed
+        assert isinstance(two_tailed, bool), "'two_tailed' must be a bool object."
+        self.two_tailed = two_tailed
+
         # check the subjects
         if subjects is not None:
-            txt = "{} not found in 'source'.".format(subjects)
-            assert np.any([subjects == i for i in source]), txt
+            assert np.any([subjects == i for i in source]), source_missing.format(subjects)
             SRC = source.copy()
 
         else:
@@ -1353,6 +1377,24 @@ class Anova(LinearRegression):
         self.source = GRP[iv + dv]
         self.source.index = pd.Index(GRP[subjects].values.flatten())
 
+        # check n_perm
+        assert isinstance(n_perm, int), "'n_perm' must be an int object."
+        self.max_perm = factorial(self.source.shape[0])
+        if n_perm > self.max_perm or n_perm < 0:
+            self.n_perm = self.max_perm
+        
+        # draw the random permutation index
+        if self.n_perm > 0:
+            self.permutations = np.atleast_2d(np.arange(self.source.shape[0]))
+            np.random.seed()
+            while len(self.permutations) <= self.n_perm:
+                new = np.atleast_2d(np.random.permutation(self.source.shape[0]))
+                self.permutations = np.vstack([self.permutations, new])
+                self.permutations = np.unique(self.permutations, axis=0)
+            self.permutations = self.permutations[1:]
+        else:
+            self.permutations = np.atleast_2d([])
+
         # separate between and within factors
         BV = []
         WV = []
@@ -1366,16 +1408,18 @@ class Anova(LinearRegression):
         self.within = WV
         self.covariates = [i for i in self.IV if self.__isCovariate__(pd.DataFrame(self.source[i]))]
 
+        # check the exclusions
+        assert isinstance(exclude, list), "'exclude' must be a list object."
+        for ex in exclude:
+            ex_ck = [np.any([i == j for j in self.source.columns]) for i in ex.split(":")]
+            assert np.all(ex_ck), "{} or one of its components was not found in source.".format(ex)
+        self.exclude = exclude
+
         # initialize the object
-        X = [self.__contrasts__(self.source[i.split(":")])
-             for i in self.__combine__(self.between + self.within)]
-        X = pd.concat(X, axis=1)
+        X = self.__combine__(self.between + self.within)
+        X = pd.concat([self.__contrasts__(self.source[i.split(":")]) for i in X], axis=1)
         Y = pd.DataFrame(self.source[dv])
         super(Anova, self).__init__(Y, X)
-
-        # Total sum of squares and degrees of freedom
-        SSt = np.sum((self.Y - self.Y.mean()).values ** 2)
-        DFt = self.source.shape[0] - 1
 
 
         #* WITHIN <- BETWEEN REGRESSION
@@ -1417,12 +1461,15 @@ class Anova(LinearRegression):
         
         #* EFFECTS CALCULATION
 
+        # Total sum of squares and degrees of freedom
+        SSt = np.sum((self.Y - self.Y.mean()).values ** 2)
+        DFt = self.source.shape[0] - 1
+
         # iterate the calculation of the stats
         self.effects = {}
         for i, w in enumerate(WV_combs):
             
             # design matrix of the within effects
-            # P = self.__design_matrix__(include_between=False)[w]
             if w == "Intercept":
                 P = self.__design_matrix__(self.source[self.within], include_intercept=True)
             else:
@@ -1781,7 +1828,8 @@ class Anova(LinearRegression):
         """
         return {":".join(j): 
                 self.__contrasts__(self.source[list(j)]).columns.to_numpy().tolist()
-                for i in np.arange(len(x)) + 1 for j in it.combinations(x, i)}
+                for i in np.arange(len(x)) + 1 for j in it.combinations(x, i)
+                if not np.any([":".join(list(j)) == k for k in self.exclude])}
 
 
 
