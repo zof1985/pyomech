@@ -1382,6 +1382,8 @@ class Anova(LinearRegression):
         self.max_perm = factorial(self.source.shape[0])
         if n_perm > self.max_perm or n_perm < 0:
             self.n_perm = self.max_perm
+        else:
+            self.n_perm = n_perm
         
         # draw the random permutation index
         if self.n_perm > 0:
