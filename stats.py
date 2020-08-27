@@ -1111,7 +1111,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween:
+        if self.label == "Intercept" or self.isBetween or self.DFn <= 1:
             ln = np.tile(None, 4)
             jns = None
         else:
@@ -1129,7 +1129,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween:
+        if self.label == "Intercept" or self.isBetween or self.DFn <= 1:
             ln = np.tile(None, 5)
         else:
             gg_eps = self.epsilon_GG()
@@ -1147,7 +1147,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween:
+        if self.label == "Intercept" or self.isBetween or self.DFn <= 1:
             ln = np.tile(None, 5)
         else:
             hf_eps = self.epsilon_HF()
