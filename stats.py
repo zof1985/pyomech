@@ -1081,7 +1081,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # dataframe
-        ln = [f.SS_num, f.SS_den, f.value, f.DF_num, f.DF_den, f.crit, f.p]
+        ln = [f.SSn, f.SSd, f.value, f.df[0], f.df[1], f.crit, f.p]
         return pd.DataFrame(ln, index=C, columns=[self.label]).T
 
 
