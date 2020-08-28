@@ -627,6 +627,75 @@ class F(Test):
 
 
 
+class PermutationF(Test):
+
+
+
+    def __init__(self, SS_num, DF_num, SS_den, DF_den, pdf, alpha=0.05, two_tailed=True):
+        """
+        Calculate an F test.
+
+        Input:
+            SS_num:     (float)
+                        the numerator sum of squares.
+
+            DF_num:     (float)
+                        the numerator degrees of freedom.
+
+            SS_den:     (float)
+                        the denominator sum of squares.
+
+            DF_den:     (float)
+                        the denominator degrees of freedom.
+            
+            pdf:        (list)
+                        list of F values on which calculating critical F and p-values.
+
+            alpha:      (float)
+                        the level of significance.
+
+            two-tailed: (bool)
+                        Should the p-value be calculated from a one or two-tailed distribution?
+        
+        Output:
+            A Test instance containing the output of the test.
+        """
+
+        # regressors
+        MS_num = SS_num / DF_num
+        MS_den = SS_den / DF_den
+        
+        # get the F value and its degrees of freedom
+        f = MS_num / MS_den
+        df = (DF_num * eps, DF_den * eps)
+
+        # check the pdf
+        txt = "'pdf' length must be {} or more. {} was provided.".format(1 / alpha, len(pdf))
+        assert len(pdf) > 1 / alpha, txt
+        
+        # get critical F and p-value
+        N = len(pdf)
+        if two_tailed:
+            a = alpha * 0.5
+            f_crit = np.quantile(abs(pdf - np.mean(pdf)), 1 - a)
+            p = (np.sum(abs(pdf - np.mean(pdf)) > abs(f - np.mean(pdf))) + 1) / (N + 1)
+        else:
+            f_crit = np.quantile(pdf, 1 - alpha)
+            p = (np.sum(pdf > f) + 1) / (N + 1)
+
+        # create the test
+        super(F, self).__init__(value=f, df=df, crit=f_crit, alpha=alpha, two_tailed=two_tailed,
+                                p=p, name="Permutation F test")
+        
+        # add some additional parameters
+        self.SSn = SS_num
+        self.MSn = MS_num
+        self.SSd = SS_den
+        self.MSd = MS_den
+        self.pdf = pdf
+
+
+
 class BrownForsythe(F):
 
 
@@ -852,7 +921,7 @@ class AnovaEffect():
 
 
 
-    def __init__(self, SSt, DFt, BW, design, hypothesis, isBetween, label):
+    def __init__(self, SSt, DFt, BW, design, hypothesis, isBetween, label, pdf):
         """
         basically a container for the data corresponding to each effect of an Anova object.
 
@@ -878,6 +947,9 @@ class AnovaEffect():
             
             label:          (str)
                             the string label defining the effect.
+            
+            pdf:            (list)
+                            the list of F values on which calculating the F critical and p-values.
         """
         
         # add the entries
@@ -885,6 +957,7 @@ class AnovaEffect():
         self.DFt = DFt
         self.isBetween = isBetween
         self.label = label
+        self.pdf = pdf
         
         # dimensions
         n, p = design.shape
@@ -929,14 +1002,27 @@ class AnovaEffect():
         """
 
         # F test
-        f = F(self.SSn, self.DFn, self.SSd, self.DFd, eps, alpha, two_tailed)
+        if len(self.pdf) == 0:
+            f = F(self.SSn, self.DFn, self.SSd, self.DFd, eps, alpha, two_tailed)
 
-        # index
-        cx = [np.tile("F test", 7), ['SSn', 'SSd', 'Statistic', 'DFn', 'DFd', 'Critical', 'P']]
-        C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
+            # index
+            cx = [np.tile("F test", 7), ['SSn', 'SSd', 'Statistic', 'DFn', 'DFd', 'Critical', 'P']]
+            C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
-        # dataframe
-        ln = [f.SSn, f.SSd, f.value, f.df[0], f.df[1], f.crit, f.p]
+            # dataframe
+            ln = [f.SSn, f.SSd, f.value, f.df[0], f.df[1], f.crit, f.p]
+        
+        # permutation F test
+        else:
+            f = PermutationF(self.SSn, self.DFn, self.SSd, self.DFd, self.pdf, alpha, two_tailed)
+
+            # index
+            cx = [np.tile("Permutation F test", 8),
+                  ['SSn', 'SSd', 'Statistic', 'DFn', 'DFd', 'Perm', 'Critical', 'P']]
+            C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
+        
+            # dataframe
+            ln = [f.SSn, f.SSd, f.value, f.df[0], f.df[1], f.crit, f.p]
         return pd.DataFrame(ln, index=C, columns=[self.label]).T
 
 
@@ -966,7 +1052,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween or self.DFn <= 1:
+        if self.label == "Intercept" or self.isBetween or self.DFn <= 1 or len(self.pdf) > 0:
             ln = np.tile(None, 4)
             jns = None
         else:
@@ -984,7 +1070,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween or self.DFn <= 1:
+        if self.label == "Intercept" or self.isBetween or self.DFn <= 1 or len(self.pdf) > 0:
             ln = np.tile(None, 5)
         else:
             gg_eps = self.epsilon_GG()
@@ -1002,7 +1088,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween or self.DFn <= 1:
+        if self.label == "Intercept" or self.isBetween or self.DFn <= 1 or len(self.pdf) > 0:
             ln = np.tile(None, 5)
         else:
             hf_eps = self.epsilon_HF()
@@ -1051,7 +1137,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(cx)
         
         # values
-        if not self.isBetween:
+        if not self.isBetween or len(self.pdf) > 0:
             ln = np.tile(None, 5)
         else:
             BF = BrownForsythe(self.source, self.DV, self.IV, alpha, two_tailed)
@@ -1278,75 +1364,33 @@ class Anova(LinearRegression):
         Y = pd.DataFrame(self.source[dv])
         super(Anova, self).__init__(Y, X)
 
+        # ensure the pdf parameter is provided
+        self.pdf = [i for i in self.__combine__(self.between + self.within)]
+        self.pdf = {e: [] for e in ["Intercept"] + self.pdf}        
 
-        #* WITHIN <- BETWEEN REGRESSION
 
-        # get the between and within subjects variable combinations
-        BV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.between)}
-        WV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.within)}
-
-        # create the between-subjects data
-        GRP = self.source.copy().reset_index()
-        GRP.insert(0, "SBJ", self.source.index.to_numpy())
-        if len(self.between) > 0:
-            BV_src = GRP.groupby(self.between + ['SBJ'], as_index=False).mean()
-            BV_src.index = pd.Index(BV_src['SBJ'].values.flatten())
-            X = []
-            for i in BV_combs:
-                if i != "Intercept":
-                    X += [self.__contrasts__(pd.DataFrame(BV_src[i.split(":")]))]
-            X = pd.concat(X, axis=1)
-        else:
-            X = pd.DataFrame(index=GRP.groupby(['SBJ']).mean().index.to_numpy())
-
-        # create the within-subjects data
-        if len(self.within) > 0:
-            Z = GRP.groupby(self.within + ['SBJ']).mean().unstack(self.within)[self.DV]
-            Z.columns = pd.Index([":".join(i[1:]) for i in Z.columns])
-            Z.index = X.index
-        else:
-            Z = pd.DataFrame(GRP[self.DV])
-            Z.index=BV_src.index
-            Z.columns=["Intercept"]
-
-        # perform the regression
-        LM = LinearRegression(Z, X)
+        #* GET THE EFFECTS
         
-        # between-effects selection matrix
-        Ip = pd.DataFrame(np.eye(LM.coefs.shape[0]), index=LM.coefs.index, columns=LM.coefs.index)
+        # build the PDF of each effect (if required)
+        if n_perm > 0:
+            pdf = {e: [] for e in self.pdf}
+            for p in self.permutations:
 
-        
-        #* EFFECTS CALCULATION
-
-        # Total sum of squares and degrees of freedom
-        SSt = np.sum((self.Y - self.Y.mean()).values ** 2)
-        DFt = self.source.shape[0] - 1
-
-        # iterate the calculation of the stats
-        self.effects = {}
-        for i, w in enumerate(WV_combs):
-            
-            # design matrix of the within effects
-            if w == "Intercept":
-                P = self.__design_matrix__(self.source[self.within], include_intercept=True)
-            else:
-                P = self.__design_matrix__(self.source[self.within], w, include_intercept=False)
-            
-            # interaction with between-effects
-            for j, b in enumerate(BV_combs):
-
-                # get the label
-                label = b if w == "Intercept" else (w if b == "Intercept" else ":".join([b, w]))
-
-                # hypothesis (used to deal with between-within relationship)
-                L = Ip[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]
-                L = pd.DataFrame(L).T
+                # permute the source
+                src = self.source.copy()
+                vals = self.source[self.DV].values[p]
+                src[self.DV] = pd.DataFrame(vals, index=src.index, columns=self.DV)
                 
-                # between
-                isBetween = (w == "Intercept") & (b != "Intercept")
+                # get the F value of each effect corresponding to the current permutation
+                Fs = self.__effects__(src)
+                for e in Fs:
+                    pdf[e] += [(Fs[e].SSn / Fs[e].DFn) / (Fs[e].SSd / Fs[e].DFd)]
+            
+            # update the pdf parameter
+            self.pdf = pdf
 
-                # store the effect
-                self.effects[label] = AnovaEffect(SSt, DFt, LM, P, L, isBetween, label)           
+        # get the effects
+        self.effects = self.__effects__(self.source)
 
 
 
@@ -1509,6 +1553,89 @@ class Anova(LinearRegression):
         
         # return the outcomes rounded to the desired decimal
         return EM.apply(self.__rnd__, decimals=digits)
+
+
+
+    def __effects__(self, src):
+        """
+        Calculate the effects related to the current ANOVA model using the provided data source.
+
+        Input:
+            src:    (pandas.DataFrame)
+
+        """
+
+        #* WITHIN <- BETWEEN REGRESSION
+
+        # get the between and within subjects variable combinations
+        BV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.between)}
+        WV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.within)}
+
+        # create the between-subjects data
+        GRP = src.copy()
+        GRP.insert(0, "SBJ", src.index.to_numpy())
+        if len(self.between) > 0:
+            BV_src = GRP.groupby(self.between + ['SBJ'], as_index=False).mean()
+            BV_src.index = pd.Index(BV_src['SBJ'].values.flatten())
+            X = []
+            for i in BV_combs:
+                if i != "Intercept":
+                    X += [self.__contrasts__(pd.DataFrame(BV_src[i.split(":")]))]
+            X = pd.concat(X, axis=1)
+        else:
+            X = pd.DataFrame(index=GRP.groupby(['SBJ']).mean().index.to_numpy())
+
+        # create the within-subjects data
+        if len(self.within) > 0:
+            Z = GRP.groupby(self.within + ['SBJ']).mean().unstack(self.within)[self.DV]
+            Z.columns = pd.Index([":".join(i[1:]) for i in Z.columns])
+            Z.index = X.index
+        else:
+            Z = pd.DataFrame(GRP[self.DV])
+            Z.index=BV_src.index
+            Z.columns=["Intercept"]
+
+        # perform the regression
+        LM = LinearRegression(Z, X)
+        
+        # between-effects selection matrix
+        Ip = pd.DataFrame(np.eye(LM.coefs.shape[0]), index=LM.coefs.index, columns=LM.coefs.index)
+
+        
+        #* EFFECTS CALCULATION
+
+        # Total sum of squares and degrees of freedom
+        SSt = np.sum((src[self.DV] - src[self.DV].mean()).values ** 2)
+        DFt = src.shape[0] - 1
+
+        # iterate the calculation of the stats
+        effects = {}
+        for i, w in enumerate(WV_combs):
+            
+            # design matrix of the within effects
+            if w == "Intercept":
+                P = self.__design_matrix__(src[self.within], include_intercept=True)
+            else:
+                P = self.__design_matrix__(src[self.within], w, include_intercept=False)
+            
+            # interaction with between-effects
+            for j, b in enumerate(BV_combs):
+
+                # get the label
+                label = b if w == "Intercept" else (w if b == "Intercept" else ":".join([b, w]))
+
+                # hypothesis (used to deal with between-within relationship)
+                L = Ip[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]
+                L = pd.DataFrame(L).T
+                
+                # between
+                isBetween = (w == "Intercept") & (b != "Intercept")
+
+                # store the effect
+                effects[label] = AnovaEffect(SSt, DFt, LM, P, L, isBetween, label, self.pdf[label])
+        
+        # return
+        return effects
 
 
 
