@@ -1985,13 +1985,11 @@ class Anova(LinearRegression):
                 M:  (pandas.DataFrame)
                     a dataframe containing the covariance matrix scaled on the effect.
             """
-            V = self.cov_unscaled()
-            Ic = self.effects["Intercept"].SSd(Y) / self.effects["Intercept"].DFd()
-            V.loc["Intercept", "Intercept"] *= self.effects["Intercept"].SSd(Y) / self.effects["Intercept"].DFd()
             if E.label != "Intercept":
                 C = E.P.columns
-                V.loc[C, C] *= (E.SSd(Y) / E.DFd())
-            return V
+                S = Vi.copy()
+                S.loc[C, C] *= (E.SSd(Y) / E.DFd())
+            return S
 
 
         def get_MM(Y):
@@ -2007,10 +2005,7 @@ class Anova(LinearRegression):
                 MM: (pandas.DataFrame)
                     the dataframe containing the estimated standard errors.
             """
-            # get the estimates
-            XX = self.X.copy()
-            XX.insert(0, "Intercept", np.tile(1, XX.shape[0]))
-            em = L.dot(self.cov_unscaled()).dot(XX.T).dot(Y.values).T
+            em = K.dot(Y.values).T
             em.index = pd.Index(['Estimate'])
             return em
 
@@ -2035,7 +2030,7 @@ class Anova(LinearRegression):
             return se
 
 
-        def get_T(Y, A):
+        def get_T(Y):
             """
             obtain T values according to the provided dependent variable and the current model.
 
@@ -2044,14 +2039,12 @@ class Anova(LinearRegression):
                 Y:  (pandas.DataFrame)
                     the dataframe containing the dependent variable data.
                 
-                A:  (pandas.Dataframe)
-                    the mean value to be subtracted if required.
-
             Output:
                 T: (pandas.DataFrame)
                     the dataframe containing the T values.
             """
-            return get_MM(Y - A) / get_SE(Y - A).values
+            T = get_MM(Y) / get_SE(Y).values
+            T.index = pd.Index(['T stat'])
 
 
         # get the linear function
@@ -2061,6 +2054,14 @@ class Anova(LinearRegression):
         # get the DV
         Y = pd.DataFrame(self.source[self.DV])
 
+        # get the unscaled coefficients
+        V = self.cov_unscaled()
+        XX = self.X.copy()
+        XX.insert(0, "Intercept", np.tile(1, XX.shape[0]))
+        K = L.dot(V).dot(XX.T)
+        Vi = V.copy()
+        Vi.loc["Intercept", "Intercept"] *= self.effects["Intercept"].SSd(Y) / self.effects["Intercept"].DFd()
+
         # get the estimates
         em = get_MM(Y)
 
@@ -2068,14 +2069,14 @@ class Anova(LinearRegression):
         se = get_SE(Y)
 
         # T value
-        tv = em.copy() / se.values
-        tv.index = pd.Index(['T stat'])
+        tv = get_T(Y)
 
         # build the pdf
-        A = em.copy()
-        if np.any(abs(L.values) > 1):
-            A.loc[A.index] = 0
-        pdf = pd.concat([get_T(Y, A) for p in self.permutations], axis=0)
+        if np.all(abs(L.values) <= 1):
+            A = (design(self.source[E.label.split(":")], E.label.split(":")) * em.values).sum(1).values
+        else:
+            A = np.zeros(Y.shape)
+        pdf = pd.concat([get_T(Y.iloc[p] - A.values) for p in self.permutations], axis=0)
         if self.two_tailed and pdf.shape[0] > 0:
             pdf = pdf.abs()
 
