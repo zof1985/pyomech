@@ -175,6 +175,228 @@ def describe(x):
 
 
 
+def isCovariate(df):
+    """
+    Check if the current variable can be considered as a covariate.
+
+    Input:
+        df: (pandas.DataFrame)
+            The dataframe representing a variable.
+    
+    Output:
+        C:  (bool)
+            True if the variable can be handled as a covariate. False, otherwise.
+    """
+        
+    # get the covariance types
+    cov_types = np.array([['float{}'.format(i), 'int{}'.format(i)] for i in [16, 32, 64]])
+    cov_types = cov_types.flatten().tolist()
+        
+    # if any of the columns in source are factors, the resulting variable will be a factor
+    return df.select_dtypes(cov_types).shape[1] == df.shape[1]
+
+
+
+def design(df, vrs, normalize=False):
+    """
+    matrix locating the unique combinations of factors within a dataframe.
+
+    Input:
+
+        df:         (pandas.DataFrame)
+                    the dataframe containing the data
+        
+        vrs:        (list)
+                    list of column names defining the combinations investigated.
+        
+        normalize:  (bool)
+                    By default (False) each value that is found is denoted by 1.
+                    if normalize is True, the value is 1 / number of occurrences.
+    
+    Output:
+
+        O:  (pandas.DataFrame)
+            the dataframe containing the df design for the provided variables.
+    """
+    
+    # check the entries
+    assert isinstance(df, pd.DataFrame), "'df' must be a DataFrame."
+    assert isinstance(vrs, list), "'vrs' must be a list."
+    for v in vrs:
+        assert np.any([v == i for i in df.columns]), "{} not found in df.".format(v)
+    assert normalize or not normalize, "'normalize' must be a bool object."
+
+    # get the index
+    I = df.index
+
+    # get the values
+    if len(vrs) > 0:
+        
+        # labelizer
+        label = lambda x: ":".join(x)
+        
+        # get the combinations
+        D = pd.DataFrame(df[vrs])
+        U = np.unique(D.values.astype(str), axis=0)
+        
+        # get the design df
+        O = pd.DataFrame(np.zeros((df.shape[0], len(U))), index=I, columns=[label(u) for u in U])
+        for u in U:
+            n = np.argwhere(D.isin(u).all(1).values.flatten()).flatten()
+            O[label(u)].iloc[n] = 1 / (len(n) if normalize else 1)
+    else:
+        O = pd.DataFrame(index=I)
+    return O
+
+
+
+def contrasts(df, type="sum"):
+    """
+    create a dummy representation of a variable.
+        
+    Input:
+        df:     (pandas.DataFrame)
+                a pandas dataframe where each column represents one component of a
+                linear model variable.
+
+        type:   (str)
+                any of "treat" or "sum". The former will have only 1 and 0.
+                The latter, 1, 0 and -1.
+        
+    Output:
+        D:      (pandas.DataFrame)
+                a dataframe containing dummy variables to represent the type
+                of model.
+    """
+
+    # check the type
+    types = ['sum', 'treat']
+    assert np.any([type == i for i in types]), "'type' must be any of " + str(types)
+
+    # get the groups combinations
+    D = {}
+    for prm in df.columns:
+        X = pd.DataFrame(df[prm])
+        X.index = df.index
+
+        # handle covariates
+        if isCovariate(X):
+            D[prm] = X
+
+        # handle factors
+        else:
+
+            # get the groups combinations
+            G = np.unique(X.values.flatten())
+            I = [np.argwhere(X.values.flatten() == i).flatten() for i in G]
+                    
+            # get the dummy columns
+            dummy = np.zeros((X.shape[0], len(G) - 1))
+            indices = np.arange(1, len(G)) if type == "treat" else np.arange(len(G) - 1)
+            cols = [label for label in G[indices]]
+            D[prm] = pd.DataFrame(dummy, index=df.index, columns=cols)
+                    
+            # fill the columns
+            for i in indices:
+                D[prm][G[i]].iloc[I[i]] = 1
+            if type == "sum":
+                D[prm].iloc[I[-1]] = -1
+
+    # combine the groups
+    G = [j for j in it.product(*[D[i].columns.to_numpy() for i in D], repeat=1)]
+    V = pd.concat([D[i] for i in D], axis=1)
+    F = {":".join(i): np.prod(V[[k for k in i]], axis=1).values.flatten() for i in G}
+    I = pd.Index([":".join(i) if len(np.array([i]).flatten()) > 1 else i for i in df.index])
+    return pd.DataFrame(F, index=I)
+
+
+
+def isBetween(df):
+    """
+    Check whether the current parameter can be considered as a between-subjects variable.
+
+    Input:
+
+        df: (pandas.DataFrame)
+            The dataframe representing a variable.
+    
+    Output:
+
+        B:  (bool)
+            True if the variable can be handled as a betwee-subjects variable. False, otherwise.
+    """
+    if isCovariate(df):
+        return True
+    for s in np.unique(df.index.to_numpy()):
+        if len(np.unique(df.loc[s].values.astype(str), axis=0)) > 1:
+            return False
+    return True
+
+
+
+def model(source, effect="", include_intercept=True, type="sum"):
+    """
+    obtain the design matrix for 'effect' on source.
+
+    Input:
+
+        source:             (pandas.DataFrame)
+                            the dataframe containing the combinations to be used as
+                            reference (i.e. the rows of the design matrix)
+
+        effect:             (str)
+                            the effect of which the design is required
+                            (i.e. the columns of the design matrix)
+
+        include_intercept:  (bool)
+                            Should the intercept be included in the X matrix?
+            
+        type:               (str)
+                            The type of contrasts to be provided. The options are "sum" or
+                            "treat".
+
+    Output:
+        K:                  (dict)
+                            a dict having each indipendent variable as key which maps a
+                            pandas dataframe containing the corresponding design matrix.                               
+    """
+        
+    # check the type
+    types = ['sum', 'treat']
+    assert np.any([type == i for i in types]), "'type' must be any of {}.".format(str(types))
+
+    # check the include_intercept
+    assert include_intercept or not include_intercept, "'include_intercept' must be a boolean."
+        
+    # check source
+    assert isinstance(source, pd.DataFrame), "'source' must be a pandas.DataFrame object."
+
+    # check effect
+    assert isinstance(effect, str), "'effect' must be a string."
+    cols = [] if effect == "" else effect.split(":")
+    for c in cols:
+        assert np.any([c == j for j in source.columns]), "{} not found in 'source'.".format(c)
+
+    # get the reference data
+    R = np.atleast_2d(np.unique(source.values.astype(str), axis=0))
+    R = pd.DataFrame(R, columns=source.columns, index= pd.Index([":".join(i) for i in R]))
+        
+    # get the design
+    if len(cols) == 0:
+        K = pd.DataFrame(index=R.index)
+    else:
+        K = contrasts(pd.DataFrame(R[cols]), type=type)
+        
+    # handle the intercept requirement
+    if include_intercept:
+        I = pd.DataFrame({'Intercept': np.tile(1, min(1, K.shape[0]))}, index=K.index)
+        K = pd.concat([I, K], axis=1)
+        
+    # return the desing matrices
+    return K
+
+
+
 ########    GENERAL CLASSES    ########
 
 
@@ -684,8 +906,8 @@ class PermutationF(Test):
             p = (np.sum(pdf > f) + 1) / (N + 1)
 
         # create the test
-        super(F, self).__init__(value=f, df=df, crit=f_crit, alpha=alpha, two_tailed=two_tailed,
-                                p=p, name="Permutation F test")
+        super(PermutationF, self).__init__(value=f, df=df, crit=f_crit, alpha=alpha,
+                                           two_tailed=two_tailed, p=p, name="Permutation F test")
         
         # add some additional parameters
         self.SSn = SS_num
@@ -894,12 +1116,13 @@ class JohnNagaoSugiura(Test):
             return None
         
         # get the (positive) eigenvalues from the errors
-        E = effect.eigenvalues(effect.SSPE)
-        E = E.values.flatten()[E.values.flatten() > 0]
+        R = effect.residuals(effect.Y)
+        SSPE = effect.P.T.dot(R.T.dot(R)).dot(effect.P)
+        E = np.real(sl.eigvals(SSPE))
+        E = E[E> 0]
         
         # get the test statistic
-        p = effect.DFn
-        n = int(effect.DFd / p)
+        n, p = effect.P.shape
         W = np.sum(E) ** 2 / np.sum(E ** 2)
         Q = n / 2 * (p - 1) ** 2 * (W - 1 / (p - 1))
         df = (p + 1) * p / 2 - 1
@@ -921,64 +1144,168 @@ class AnovaEffect():
 
 
 
-    def __init__(self, SSt, DFt, BW, design, hypothesis, isBetween, label, pdf):
+    def __init__(self, src, dv, isB, lbl, X, W, S, P, L, prm):
         """
         basically a container for the data corresponding to each effect of an Anova object.
 
         Input:
 
-            SSt:            (float)
-                            Sum of Squares of the model.
+            src:    (pandas.DataFrame)
+                    the source data
 
-            DFt:            (float)
-                            Sum of Squares of the model.
+            dv:     (list)
+                    The column corresponding to the dependent variable in source.
 
-            BW:             (pyomech.LinearRegression)
-                            the within ~ between regression object
+            isB:    (bool)
+                    is the effect a betwee-subjects effect?
+            
+            lbl:    (str)
+                    the name of the effect.
+            
+            X:      (pandas.DataFrame)
+                    the between-subjects regressors.
+            
+            W:      (pandas.DataFrame)
+                    the within-subjects linear model design.
+            
+            S:      (pandas.DataFrame)
+                    the subjects linear model design.
 
-            design:         (pandas.DataFrame)
-                            the matrix containing the effect design contrasts.
+            P:      (pandas.DataFrame)
+                    the within-subjects design for this effect.
             
-            hypothesis:     (pandas.DataFrame)
-                            the hypothesis matrix of the effect.
+            L:      (pandas.DataFrame)
+                    the between-subjects design for this effect.
             
-            isBetween:      (bool)
-                            is this effect a between-subjects effect?
-            
-            label:          (str)
-                            the string label defining the effect.
-            
-            pdf:            (list)
-                            the list of F values on which calculating the F critical and p-values.
+            prm:    (2D numpy.ndarray)
+                    an array where each row contains the combinations of the dependent variable
+                    extracted for building the pdf.
         """
         
         # add the entries
-        self.SSt = SSt
-        self.DFt = DFt
-        self.isBetween = isBetween
-        self.label = label
-        self.pdf = pdf
+        self.source = src
+        self.DV = dv
+        self.isBetween = isB
+        self.label = lbl
+        self.X = X
+        self.W = W
+        self.S = S
+        self.P = P
+        self.L = L
+        self.permutations = prm
+
+        # inverted covariance
+        self.Vi = self.X.T.dot(self.X)
+
+        # covariance
+        self.V = pd.DataFrame(sl.inv(self.Vi), index=self.Vi.columns, columns=self.Vi.columns)
+
+        # coefs (raw)
+        self.B = self.V.dot(self.X.T)
+
+        # Identity
+        I = np.eye(self.source.shape[0])
+        self.I = pd.DataFrame(I, index=self.source.index, columns=self.source.index)
+
+        # inverted within-subjects design product
+        PPi = sl.inv(self.P.T.dot(self.P))
+        self.PPi = pd.DataFrame(PPi, index=self.P.columns, columns=self.P.columns)
         
-        # dimensions
-        n, p = design.shape
+        # the DV
+        self.Y = pd.DataFrame(self.source[self.DV])
 
-        # inverted design cross product
-        PPi = sl.inv(design.T.dot(design))
-        self.__PPi__ = pd.DataFrame(PPi, index=design.columns, columns=design.columns)
 
-        # effect term
-        V = hypothesis.dot(BW.cov_unscaled()).dot(hypothesis.T)           # covariance
-        Vi = pd.DataFrame(sl.inv(V), index=V.columns, columns=V.columns)  # inverted covariance
-        B = hypothesis.dot(BW.coefs.dot(design))                          # coefs
-        self.SSP = B.T.dot(Vi).dot(B)
-        self.SSn = np.sum(np.diag(self.SSP.dot(self.__PPi__)))           
-        self.DFn = p
 
-        # error term
-        self.SSPE = design.T.dot(BW.SSPE()).dot(design)
-        self.SSd = np.sum(np.diag(self.SSPE.dot(self.__PPi__)))
-        self.DFd = n * p
+    def SSt(self):
+        """
+        The total sum of squares
+        """
+        return np.sum((self.source[self.DV] - self.source[self.DV].mean()).values ** 2)
     
+
+
+    def DFt(self):
+        """
+        The total degrees of freedom.
+        """
+        return self.source.shape[0] - 1
+
+
+
+    def splitWithin(self, Y):
+        """
+        split Y into its within-subjects components.
+        """
+        return self.S.T.dot(self.I * Y.values).dot(self.W)
+
+        
+
+    def coefs(self, Y):
+        """
+        obtain regression coefficients
+        """
+        return self.B.dot(self.splitWithin(Y))
+
+
+
+    def residuals(self, Y):
+        """
+        get the residuals of the regression performed providing Y
+        """
+        return self.splitWithin(Y) - self.X.dot(self.coefs(Y))
+
+
+
+    def SSn(self, Y):
+        """
+        get the Sum of Squares according to the given Y.
+
+        Input:
+            Y:      (pandas.DataFrame)
+                    the data to be used to calculate the SSn.
+
+        Output:
+            SSn:    (float)
+                    the sum of squares.
+        """
+        C = self.L.dot(self.coefs(Y)).dot(self.P)
+        SSP = C.T.dot(self.Vi).dot(C)
+        return np.sum(np.diag(SSP.dot(self.PPi)))
+
+
+
+    def DFn(self):
+        """
+        get the degrees of freedom of the effect.
+        """
+        return self.P.shape[1]
+
+
+
+    def SSd(self, Y):
+        """
+        get the Sum of Squares according to the given Y.
+
+        Input:
+            Y:      (pandas.DataFrame)
+                    the data to be used to calculate the SSn.
+
+        Output:
+            SSn:    (float)
+                    the sum of squares.
+        """
+        R = self.residuals(Y)
+        SSPE = self.P.T.dot(R.T.dot(R)).dot(self.P)
+        return np.sum(np.diag(SSPE.dot(self.PPi)))
+
+
+
+    def DFd(self):
+        """
+        get the degrees of freedom of the error term.
+        """
+        return np.prod(self.P.shape)
+
 
 
     def F_test(self, eps=1, alpha=0.05, two_tailed=True):
@@ -1002,8 +1329,9 @@ class AnovaEffect():
         """
 
         # F test
-        if len(self.pdf) == 0:
-            f = F(self.SSn, self.DFn, self.SSd, self.DFd, eps, alpha, two_tailed)
+        if self.permutations.shape[1] == 0:
+            f = F(self.SSn(self.Y), self.DFn(), self.SSd(self.Y), self.DFd(), eps, alpha,
+                  two_tailed)
 
             # index
             cx = [np.tile("F test", 7), ['SSn', 'SSd', 'Statistic', 'DFn', 'DFd', 'Critical', 'P']]
@@ -1014,7 +1342,18 @@ class AnovaEffect():
         
         # permutation F test
         else:
-            f = PermutationF(self.SSn, self.DFn, self.SSd, self.DFd, self.pdf, alpha, two_tailed)
+            
+            # build the pdf
+            def permuted_F(p):
+                Z = pd.DataFrame(self.Y.values[p], index=self.Y.index, columns=self.Y.columns)
+                return (self.SSn(Z) / self.DFn()) / (self.SSd(Z) / self.DFd())
+            pdf = jl.Parallel(prefer="threads") (
+                jl.delayed(permuted_F)(p) for p in self.permutations
+                )
+            
+            # get the F test
+            f = PermutationF(self.SSn(self.Y), self.DFn(), self.SSd(self.Y), self.DFd(), pdf,
+                             alpha, two_tailed)
 
             # index
             cx = [np.tile("Permutation F test", 8),
@@ -1022,7 +1361,9 @@ class AnovaEffect():
             C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
             # dataframe
-            ln = [f.SSn, f.SSd, f.value, f.df[0], f.df[1], f.crit, f.p]
+            ln = [f.SSn, f.SSd, f.value, f.df[0], f.df[1], len(pdf), f.crit, f.p]
+        
+        # return the dataframe
         return pd.DataFrame(ln, index=C, columns=[self.label]).T
 
 
@@ -1051,8 +1392,13 @@ class AnovaEffect():
         cx = [np.tile("JNS test", 4), ['Statistic', 'DF', "Crit", 'P']]
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
+        # checks
+        not_required = np.any([(self.label == "Intercept"),
+                               (self.isBetween or self.DFn() <= 1),
+                               (self.permutations.shape[1] > 0)])
+
         # outcomes
-        if self.label == "Intercept" or self.isBetween or self.DFn <= 1 or len(self.pdf) > 0:
+        if not_required:
             ln = np.tile(None, 4)
             jns = None
         else:
@@ -1070,7 +1416,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween or self.DFn <= 1 or len(self.pdf) > 0:
+        if not_required:
             ln = np.tile(None, 5)
         else:
             gg_eps = self.epsilon_GG()
@@ -1088,7 +1434,7 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
         
         # outcomes
-        if self.label == "Intercept" or self.isBetween or self.DFn <= 1 or len(self.pdf) > 0:
+        if not_required:
             ln = np.tile(None, 5)
         else:
             hf_eps = self.epsilon_HF()
@@ -1137,32 +1483,14 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(cx)
         
         # values
-        if not self.isBetween or len(self.pdf) > 0:
+        if not self.isBetween or self.permutations.shape[1] > 0:
             ln = np.tile(None, 5)
         else:
-            BF = BrownForsythe(self.source, self.DV, self.IV, alpha, two_tailed)
+            BF = BrownForsythe(self.source, self.DV, self.label.split(":"), alpha, two_tailed)
             ln = [BF.value, BF.DF_num, BF.DF_den, BF.crit, BF.p]
         
         # return the dataframe
         return pd.DataFrame(ln, index=C, columns=[self.label]).T
-
-
-
-    def eigenvalues(self, SS_matrix):
-        """
-        return the eigenvalues associated to the Effect (SSP) or Error (SSPE).
-
-        Input:
-            SS_matrix:  (pandas.DataFrame)
-                        the dataframe containing the sum of square product (error) matrix.
-        
-        Output:
-            eig:        (pandas.DataFrame)
-                        a dataframe containing the eigenvalue associated to each element of the
-                        effect.
-        """
-        eig = np.real(sl.eigvals(SS_matrix.dot(self.__PPi__)))
-        return pd.DataFrame(eig, index=self.__PPi__.columns).T
 
 
 
@@ -1175,11 +1503,13 @@ class AnovaEffect():
         else:
             
             # get the positive eigenvalues from SSPE
-            E = self.eigenvalues(self.SSPE).values.flatten()
+            R = self.residuals(self.Y)
+            SSPE = self.P.T.dot(R.T.dot(R)).dot(self.P)
+            E = np.real(sl.eigvals(SSPE))
             E = E[E > 0]
             
             # return the Greenhouse-Geisser epsilon
-            p = self.DFn
+            p = self.DFn()
             return ((np.sum(E) / p) ** 2) / (np.sum(E ** 2) / p)
 
 
@@ -1193,12 +1523,13 @@ class AnovaEffect():
         else:
             
             # get the positive eigenvalues from SSPE
-            E = self.eigenvalues(self.SSPE).values.flatten()
+            R = self.residuals(self.Y)
+            SSPE = self.P.T.dot(R.T.dot(R)).dot(self.P)
+            E = np.real(sl.eigvals(SSPE))
             E = E[E > 0]
             
             # return the Huynh-Feldt epsilon
-            p = self.DFn
-            n = int(self.DFd / p)
+            n, p = self.P.shape
             GG = self.epsilon_GG()
             return ((n + 1) * p * GG - 2) / (p * (n - p * GG))
 
@@ -1222,7 +1553,8 @@ class AnovaEffect():
         C = pd.MultiIndex.from_arrays(np.atleast_2d(cx))
 
         # effects
-        ln = self.SSn / np.array([self.SSt, self.SSn + self.SSd, self.SSn + SS_error])
+        ln = self.SSn(self.Y) / np.array([self.SSt(), self.SSn(self.Y) + self.SSd(self.Y),
+                                          self.SSn(self.Y) + SS_error])
         return pd.DataFrame(ln, columns=[self.label], index=C).T
         
 
@@ -1343,13 +1675,13 @@ class Anova(LinearRegression):
         WV = []
         for i in self.source:
             if not np.any([i == j for j in dv]):
-                if self.__isBetween__(pd.DataFrame(self.source[i])):
+                if isBetween(pd.DataFrame(self.source[i])):
                     BV += [i]
                 else:
                     WV += [i]
         self.between = BV
         self.within = WV
-        self.covariates = [i for i in self.IV if self.__isCovariate__(pd.DataFrame(self.source[i]))]
+        self.covariates = [i for i in self.IV if isCovariate(pd.DataFrame(self.source[i]))]
 
         # check the exclusions
         assert isinstance(exclude, list), "'exclude' must be a list object."
@@ -1360,37 +1692,62 @@ class Anova(LinearRegression):
 
         # initialize the object
         X = self.__combine__(self.between + self.within)
-        X = pd.concat([self.__contrasts__(self.source[i.split(":")]) for i in X], axis=1)
+        X = pd.concat([contrasts(self.source[i.split(":")]) for i in X], axis=1)
         Y = pd.DataFrame(self.source[dv])
-        super(Anova, self).__init__(Y, X)
-
-        # ensure the pdf parameter is provided
-        self.pdf = [i for i in self.__combine__(self.between + self.within)]
-        self.pdf = {e: [] for e in ["Intercept"] + self.pdf}        
+        super(Anova, self).__init__(Y, X)       
 
 
-        #* GET THE EFFECTS
+        #* DESIGN PARAMETERS
+
+        # get the between and within subjects variable combinations
+        BV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.between)}
+        WV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.within)}
+
+        # create the between-subjects data
+        GRP = self.source.copy()
+        GRP.insert(0, "SBJ", self.source.index.to_numpy())
+
+        # between
+        if len(self.between) > 0:
+            X = design(GRP, self.between)
+        else:
+            X = pd.DataFrame(index=GRP.index)
+        X.insert(0, "Intercept", np.tile(1, GRP.shape[0]))
+        X = contrasts(design(GRP, ["SBJ"], normalize=True).T.dot(X))
+
+        # within
+        W = design(GRP, self.within)
+
+        # subjects
+        S = design(GRP, ["SBJ"])
         
-        # build the PDF of each effect (if required)
-        if n_perm > 0:
-            pdf = {e: [] for e in self.pdf}
-            for p in self.permutations:
 
-                # permute the source
-                src = self.source.copy()
-                vals = self.source[self.DV].values[p]
-                src[self.DV] = pd.DataFrame(vals, index=src.index, columns=self.DV)
+        #* EFFECTS CALCULATION
+
+        self.effects = {}
+        I = pd.DataFrame(np.eye(X.shape[1]), index=X.columns, columns=X.columns)
+        for j, b in enumerate(BV_combs):
+
+            # between-subjects linear function
+            L = pd.DataFrame(I[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]).T
+
+            # design matrix of the within effects
+            for i, w in enumerate(WV_combs):
+                D = pd.DataFrame(self.source[self.within])
+                if w == "Intercept":
+                    P = model(D, include_intercept=True)
+                else:
+                    P = model(D, w, include_intercept=False)
+                                               
+                # between
+                isB = (w == "Intercept") & (b != "Intercept")                
                 
-                # get the F value of each effect corresponding to the current permutation
-                Fs = self.__effects__(src)
-                for e in Fs:
-                    pdf[e] += [(Fs[e].SSn / Fs[e].DFn) / (Fs[e].SSd / Fs[e].DFd)]
-            
-            # update the pdf parameter
-            self.pdf = pdf
+                # label
+                lbl = b if w == "Intercept" else (w if b == "Intercept" else ":".join([b, w]))
 
-        # get the effects
-        self.effects = self.__effects__(self.source)
+                # store the effect
+                self.effects[lbl] = AnovaEffect(GRP, self.DV, isB, lbl, X, W, S, P, L,
+                                                self.permutations)
 
 
 
@@ -1410,7 +1767,7 @@ class Anova(LinearRegression):
         """
         
         # get the total error SS to calculate the generalized effect sizes
-        SSe = np.sum([self.effects[e].SSd for e in self.effects])
+        SSe = np.sum([self.effects[e].SSd(self.effects[e].Y) for e in self.effects])
         
         # create the table
         table = pd.DataFrame()
@@ -1448,16 +1805,12 @@ class Anova(LinearRegression):
         M = pd.DataFrame()
         D = pd.DataFrame()
         for e in [i for i in self.effects if i != "Intercept"]:
-            
-            # get the linear function and the scaled covariance matrix for the effect
-            L = self.__linfun__(self.effects[e])
-            V = self.__cov_scaled__(self.effects[e])
 
             # get the emmeans but keep only the columns of insterest
             emm_cols = ["Estimate", "Standard error",
                         "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
                         "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))]
-            em = self.__emmeans__(L, V, self.effects[e].DFd)[emm_cols]
+            em = self.__emmeans__(self.effects[e])[emm_cols]
             ex = np.atleast_2d([[e, i] for i in em.index])
             em.index = pd.MultiIndex.from_arrays(ex.T)
 
@@ -1516,7 +1869,6 @@ class Anova(LinearRegression):
             
             # get the linear function and the scaled covariance matrix for the effect
             L = self.__linfun__(self.effects[e])
-            V = self.__cov_scaled__(self.effects[e])
 
             # obtain the contrast matrix
             J = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
@@ -1544,7 +1896,7 @@ class Anova(LinearRegression):
                         "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
                         "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha)),
                         "T stat", "DF", "T crit", "P", "P adj. (Holm-Sidak)"]
-            em = self.__emmeans__(C, V, self.effects[e].DFd)[emm_cols]
+            em = self.__emmeans__(self.effects[e], C)[emm_cols]
             ix = np.atleast_2d([[e, i] for i in em.index])
             em.index = pd.MultiIndex.from_arrays(ix.T)
 
@@ -1601,6 +1953,16 @@ class Anova(LinearRegression):
         # between-effects selection matrix
         Ip = pd.DataFrame(np.eye(LM.coefs.shape[0]), index=LM.coefs.index, columns=LM.coefs.index)
 
+        # between-within covariance and inverted covariance
+        V = LM.cov_unscaled()
+        Vi = pd.DataFrame(sl.inv(V), index=V.columns, columns=V.columns)
+
+        # between-within coefs
+        B = LM.coefs
+
+        # between-within SSPE
+        SSPE = LM.SSPE()
+
         
         #* EFFECTS CALCULATION
 
@@ -1608,8 +1970,13 @@ class Anova(LinearRegression):
         SSt = np.sum((src[self.DV] - src[self.DV].mean()).values ** 2)
         DFt = src.shape[0] - 1
 
-        # iterate the calculation of the stats
-        effects = {}
+        # get the within-subjects dependent parameters
+        B_w = {}
+        SSd = {}
+        DFd = {}
+        DFn = {}
+        E = {}
+        PPi = {}
         for i, w in enumerate(WV_combs):
             
             # design matrix of the within effects
@@ -1618,22 +1985,69 @@ class Anova(LinearRegression):
             else:
                 P = self.__design_matrix__(src[self.within], w, include_intercept=False)
             
-            # interaction with between-effects
+            # shape
+            n, p = P.shape
+
+            # SSPE
+            SSPE_eff = P.T.dot(SSPE).dot(P)
+
+            # coefs effect (within)
+            B_w[w] = B.dot(P)
+
+            # inverted design cross product
+            PPi[w] = pd.DataFrame(sl.inv(P.T.dot(P)), index=P.columns, columns=P.columns)
+
+            # SSd and DFd
+            SSd[w] = np.sum(np.diag(SSPE_eff.dot(PPi[w])))
+            DFd[w] = n * p
+            DFn[w] = p
+
+            # eigenvalues
+            E[w] = pd.DataFrame(np.real(sl.eigvals(SSPE_eff.dot(PPi[w]))), index=PPi[w].columns).T
+
+        # get the between-subjects dependent parameters
+        Vib = {}
+        L_b = {}
+        for j, b in enumerate(BV_combs):
+            
+            # hypothesis (used to deal with between-within relationship)
+            L = Ip[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]
+            L_b[b] = pd.DataFrame(L).T
+
+            # scaled covariance and inverted covariance
+            Vb = L_b[b].dot(V).dot(L_b[b].T)
+            Vib[b] = pd.DataFrame(sl.inv(Vb), index=Vb.columns, columns=Vb.columns)
+
+        # get the effects
+        effects = {}
+        for i, w in enumerate(WV_combs):
             for j, b in enumerate(BV_combs):
 
                 # get the label
                 label = b if w == "Intercept" else (w if b == "Intercept" else ":".join([b, w]))
-
-                # hypothesis (used to deal with between-within relationship)
-                L = Ip[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]
-                L = pd.DataFrame(L).T
-                
+                               
                 # between
                 isBetween = (w == "Intercept") & (b != "Intercept")
+                
+                # effects coefs
+                B_eff = L_b[b].dot(B_w[w])
+
+                # SSP
+                SSP_eff = B_eff.T.dot(Vib[b]).dot(B_eff)
+
+                # SSn
+                SSn = np.sum(np.diag(SSP_eff.dot(PPi[w])))
+
+                # data
+                vrs = np.array([w]).tolist() if w != "Intercept" else []
+                vrs += np.array([b]).tolist() if b != "Intercept" else []
+                vrs = np.unique([i.split(":") for i in vrs]).tolist()
+                src = self.source[self.DV + vrs].copy()
 
                 # store the effect
-                effects[label] = AnovaEffect(SSt, DFt, LM, P, L, isBetween, label, self.pdf[label])
-        
+                effects[label] = AnovaEffect(SSt, DFt, SSn, DFn[w], SSd[w], DFd[w], E[w],
+                                             isBetween, label, self.pdf, src, self.DV, vrs)
+
         # return
         return effects
 
@@ -1677,11 +2091,11 @@ class Anova(LinearRegression):
         """
         
         # obtain the linear function
-        I = np.unique(self.source[E.label.split(":")].values.astype(str), axis=0)
+        I = np.unique(self.source[E.IV].values.astype(str), axis=0)
         I = pd.Index([":".join(i) for i in I])
         C = self.coefs.index
         L = pd.DataFrame(np.zeros((len(I), len(C))), index=I, columns=C)
-        P = self.__design_matrix__(self.source[E.label.split(":")], E.label, include_intercept=True)
+        P = self.__design_matrix__(self.source[E.IV], E.label, include_intercept=True)
         L.loc[P.index, P.columns] = P.values
         return L
 
@@ -1689,7 +2103,7 @@ class Anova(LinearRegression):
 
     def __cov_scaled__(self, E):
         """
-        return the coefficients covariance matrix scaled by the mean error of the effect.
+        return the covariance matrix scaled by the mean error of the effect.
         
         Input:
             E:  (AnovaEffect)
@@ -1711,7 +2125,7 @@ class Anova(LinearRegression):
 
 
 
-    def __emmeans__(self, L, V, D):
+    def __emmeans__(self, E, L=None):
         """
         return the estimated marginal means for an effect given through its linear function and its
         scaled covariance matrix.
@@ -1726,22 +2140,30 @@ class Anova(LinearRegression):
                 the dataframe containing the covariance matrix of the coefficients scaled by the
                 error of an effect. Typically it is the output of the __cov_scaled__ function.
 
-            D:  (float)
-                the degrees of freedom of the error term of the effect.
-
         Output:
             M:  (pandas.DataFrame)
                 a dataframe containing the emmeans for the effect.
         """
 
+        # get the linear function
+        if L is None:
+            L = self.__linfun__(E)
+
         # get the estimates
         em = L.dot(self.coefs).T
         em.index = pd.Index(['Estimate'])
-            
+        
+        # get the scaled covariance matrix
+        V = self.__cov_scaled__(E)
+
         # obtain the standard errors
         M = L.dot(V) * L
         se = pd.DataFrame(M.sum(1)).T.apply(np.sqrt)
         se.index = pd.Index(['Standard error'])
+
+        # T value
+        tv = em.copy() / se.values
+        tv.index = pd.Index(['T stat'])
 
         # get the degrees of freedom used to calculate confidence intervals
         dfN = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=["DFc"])
@@ -1769,10 +2191,6 @@ class Anova(LinearRegression):
             ci_sup.loc[ci_sup.index, t] = em.loc[em.index, t].values + c
         ci_inf.index = pd.Index(["{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha))])
         ci_sup.index = pd.Index(["{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))])
-
-        # T value
-        tv = em.copy() / se.values
-        tv.index = pd.Index(['T stat'])
         
         # get the effect degrees of freedom
         df = dfc.copy()
@@ -1811,175 +2229,9 @@ class Anova(LinearRegression):
                 a dict with each factor combination as key and the corresponding factors as values.
         """
         return {":".join(j): 
-                self.__contrasts__(self.source[list(j)]).columns.to_numpy().tolist()
+                contrasts(self.source[list(j)]).columns.to_numpy().tolist()
                 for i in np.arange(len(x)) + 1 for j in it.combinations(x, i)
                 if not np.any([":".join(list(j)) == k for k in self.exclude])}
-
-
-
-    def __isBetween__(self, df):
-        """
-        Check whether the current parameter can be considered as a between-subjects variable.
-
-        Input:
-            df: (pandas.DataFrame)
-                The dataframe representing a variable.
-    
-        Output:
-            B:  (bool)
-                True if the variable can be handled as a betwee-subjects variable. False, otherwise.
-        """
-        if self.__isCovariate__(df):
-            return True
-        for s in np.unique(df.index.to_numpy()):
-            if len(np.unique(df.loc[s].values.astype(str), axis=0)) > 1:
-                return False
-        return True
-
-
-
-    def __isCovariate__(self, df):
-        """
-        Check if the current variable can be considered as a covariate.
-
-        Input:
-            df: (pandas.DataFrame)
-                The dataframe representing a variable.
-    
-        Output:
-            C:  (bool)
-                True if the variable can be handled as a covariate. False, otherwise.
-        """
-        
-        # get the covariance types
-        cov_types = np.array([['float{}'.format(i), 'int{}'.format(i)] for i in [16, 32, 64]])
-        cov_types = cov_types.flatten().tolist()
-        
-        # if any of the columns in source are factors, the resulting variable will be a factor
-        return df.select_dtypes(cov_types).shape[1] == df.shape[1]
-
-
-
-    def __contrasts__(self, df, type="sum"):
-        """
-        create a dummy representation of a variable.
-        
-        Input:
-            df:     (pandas.DataFrame)
-                    a pandas dataframe where each column represents one component of a
-                    linear model variable.
-
-            type:   (str)
-                    any of "treat" or "sum". The former will have only 1 and 0.
-                    The latter, 1, 0 and -1.
-        
-        Output:
-            D:      (pandas.DataFrame)
-                    a dataframe containing dummy variables to represent the type
-                    of model.
-        """
-
-        # check the type
-        types = ['sum', 'treat']
-        assert np.any([type == i for i in types]), "'type' must be any of " + str(types)
-
-        # get the groups combinations
-        D = {}
-        for prm in df.columns:
-            X = pd.DataFrame(df[prm])
-            X.index = df.index
-
-            # handle covariates
-            if self.__isCovariate__(X):
-                D[prm] = X
-
-            # handle factors
-            else:
-
-                # get the groups combinations
-                G = np.unique(X.values.flatten())
-                I = [np.argwhere(X.values.flatten() == i).flatten() for i in G]
-                    
-                # get the dummy columns
-                dummy = np.zeros((X.shape[0], len(G) - 1))
-                indices = np.arange(1, len(G)) if type == "treat" else np.arange(len(G) - 1)
-                cols = [label for label in G[indices]]
-                D[prm] = pd.DataFrame(dummy, index=df.index, columns=cols)
-                    
-                # fill the columns
-                for i in indices:
-                    D[prm][G[i]].iloc[I[i]] = 1
-                if type == "sum":
-                    D[prm].iloc[I[-1]] = -1
-
-        # combine the groups
-        G = [j for j in it.product(*[D[i].columns.to_numpy() for i in D], repeat=1)]
-        V = pd.concat([D[i] for i in D], axis=1)
-        F = {":".join(i): np.prod(V[[k for k in i]], axis=1).values.flatten() for i in G}
-        I = pd.Index([":".join(i) if len(np.array([i]).flatten()) > 1 else i for i in df.index])
-        return pd.DataFrame(F, index=I)
-
-
-
-    def __design_matrix__(self, source, effect="", include_intercept=True, type="sum"):
-        """
-        obtain the design matrix for 'effect' on source.
-
-        Input:
-            source:             (pandas.DataFrame)
-                                the dataframe containing the combinations to be used as
-                                reference (i.e. the rows of the design matrix)
-
-            effect:             (str)
-                                the effect of which the design is required
-                                (i.e. the columns of the design matrix)
-
-            include_intercept:  (bool)
-                                Should the intercept be included in the X matrix?
-            
-            type:               (str)
-                                The type of contrasts to be provided. The options are "sum" or
-                                "treat".
-
-        Output:
-            K:                  (dict)
-                                a dict having each indipendent variable as key which maps a
-                                pandas dataframe containing the corresponding design matrix.                               
-        """
-        
-        # check the type
-        types = ['sum', 'treat']
-        assert np.any([type == i for i in types]), "'type' must be any of {}.".format(str(types))
-
-        # check the include_intercept
-        assert include_intercept or not include_intercept, "'include_intercept' must be a boolean."
-        
-        # check source
-        assert isinstance(source, pd.DataFrame), "'source' must be a pandas.DataFrame object."
-
-        # check effect
-        assert isinstance(effect, str), "'effect' must be a string."
-        cols = [] if effect == "" else effect.split(":")
-        for c in cols:
-            assert np.any([c == j for j in source.columns]), "{} not found in 'source'.".format(c)
-
-        # get the reference data
-        R = np.atleast_2d(np.unique(source.values.astype(str), axis=0))
-        R = pd.DataFrame(R, columns=source.columns, index= pd.Index([":".join(i) for i in R]))
-        
-        # get the design
-        if len(cols) == 0:
-            K = pd.DataFrame(index=R.index)
-        else:
-            K = self.__contrasts__(pd.DataFrame(R[cols]), type=type)
-        
-        # handle the intercept requirement
-        if include_intercept:
-            I = pd.DataFrame({'Intercept': np.tile(1, min(1, K.shape[0]))}, index=K.index)
-            K = pd.concat([I, K], axis=1)
-        
-        # return the desing matrices
-        return K
 
 
 
