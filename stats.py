@@ -1788,9 +1788,7 @@ class Anova(LinearRegression):
                 ], axis=1)
 
         # parallelize computation
-        pool = ProcessingPool(cpu_count())
-        R = pool.map(pfun, [i for i in self.effects if i != "Intercept"])
-        pool.close()
+        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects])
         return pd.concat(R, axis=0).dropna(axis=1, how='all').apply(self.__rnd__, decimals=digits)
 
 
@@ -1849,12 +1847,10 @@ class Anova(LinearRegression):
                 K.index = pd.MultiIndex.from_arrays(np.atleast_2d([[e, ":".join(c)]]).T)
                 D = D.append(K)
 
-            return em, D
+            return [em, D]
 
         # parallelize computation
-        pool = ProcessingPool(cpu_count())
-        R = pool.map(pfun, [i for i in self.effects if i != "Intercept"])
-        pool.close()
+        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
         
         # get descriptive and marginal means stats
         M = pd.DataFrame()
@@ -1910,7 +1906,8 @@ class Anova(LinearRegression):
             """
 
             # obtain the contrast matrix
-            J = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
+            J = pd.DataFrame(self.source[e.split(":")])
+            J = np.atleast_2d(np.unique(J.values.astype(str), axis=0))
             M = pd.DataFrame(index=[":".join(j) for j in J])
             for i, j in enumerate(J[:-1]):
                 for z in J[(i + 1):]:
@@ -1939,9 +1936,7 @@ class Anova(LinearRegression):
             return em
 
         # parallelize computation
-        pool = ProcessingPool(cpu_count())
-        R = pool.map(pfun, [i for i in self.effects if i != "Intercept"])
-        pool.close()
+        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
 
         # return the outcomes rounded to the desired decimal
         return pd.concat(R, axis=0).apply(self.__rnd__, decimals=digits)
