@@ -8,13 +8,14 @@
 import math
 import numpy as np
 import pandas as pd
-import joblib as jl
 import itertools as it
 import scipy.stats as st
 import scipy.linalg as sl
 import warnings
 from .regression import LinearRegression
 from scipy.special import factorial
+from pathos.multiprocessing import ProcessingPool
+from os import cpu_count
 
 
 
@@ -1765,19 +1766,32 @@ class Anova(LinearRegression):
 
         # get the total error SS to calculate the generalized effect sizes
         SSe = np.sum([self.effects[e].SSd(self.effects[e].Y) for e in self.effects])
+        
+        # parallelizing function
+        def pfun(e):
+            """
+            internal function used to parallelize computation.
 
-        # create the table
-        table = pd.DataFrame()
-        for e in self.effects:
-            contents = [self.effects[e].variance_test(), self.effects[e].F_test(),
-                        self.effects[e].sphericity_test(), self.effects[e].effect_sizes(SSe)]
-            table = table.append(pd.concat(contents, axis=1))
+            Input:
+                e:  (str)
+                    the name of an effect
+            
+            Output:
+                df: (pandas.DataFrame)
+                    one row dataframe containing the anova table output of the effect "e".
+            """
+            return pd.concat([
+                self.effects[e].variance_test(),
+                self.effects[e].F_test(),
+                self.effects[e].sphericity_test(),
+                self.effects[e].effect_sizes(SSe)
+                ], axis=1)
 
-        # drop empty columns
-        table = table.dropna(axis=1, how='all')
-
-        # return the outcomes rounded to the desired decimal
-        return table.apply(self.__rnd__, decimals=digits)
+        # parallelize computation
+        pool = ProcessingPool(cpu_count())
+        R = pool.map(pfun, [i for i in self.effects if i != "Intercept"])
+        pool.close()
+        return pd.concat(R, axis=0).dropna(axis=1, how='all').apply(self.__rnd__, decimals=digits)
 
 
 
@@ -1798,10 +1812,19 @@ class Anova(LinearRegression):
                     a dataframe containing all the outcomes.
         """
 
-        # get descriptive and marginal means stats
-        M = pd.DataFrame()
-        D = pd.DataFrame()
-        for e in [i for i in self.effects if i != "Intercept"]:
+        # parallelizing function
+        def pfun(e):
+            """
+            internal function used to parallelize computation.
+
+            Input:
+                e:  (str)
+                    the name of an effect
+            
+            Output:
+                df: (pandas.DataFrame)
+                    one row dataframe containing the anova table output of the effect "e".
+            """
 
             # get the emmeans but keep only the columns of insterest
             emm_cols = ["Estimate", "Standard error",
@@ -1811,13 +1834,11 @@ class Anova(LinearRegression):
             ex = np.atleast_2d([[e, i] for i in em.index])
             em.index = pd.MultiIndex.from_arrays(ex.T)
 
-            # store the marginal means
-            M = M.append(em)
-
             # get the unique combinations for each effect
             combs = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
 
             # get the data corresponding to each combination
+            D = pd.DataFrame()
             for c in combs:
 
                 # data
@@ -1827,6 +1848,20 @@ class Anova(LinearRegression):
                 K = describe(dv)
                 K.index = pd.MultiIndex.from_arrays(np.atleast_2d([[e, ":".join(c)]]).T)
                 D = D.append(K)
+
+            return em, D
+
+        # parallelize computation
+        pool = ProcessingPool(cpu_count())
+        R = pool.map(pfun, [i for i in self.effects if i != "Intercept"])
+        pool.close()
+        
+        # get descriptive and marginal means stats
+        M = pd.DataFrame()
+        D = pd.DataFrame()
+        for em, ds in R:
+            M = M.append(em)
+            D = D.append(ds)
 
         # get descriptive statistics of the residuals
         R = describe(self.residuals().values.flatten())
@@ -1860,16 +1895,23 @@ class Anova(LinearRegression):
                     a dataframe containing all the outcomes.
         """
 
-        # iterate each effect
-        EM = pd.DataFrame()
-        for e in [i for i in self.effects if i != "Intercept"]:
+                # parallelizing function
+        def pfun(e):
+            """
+            internal function used to parallelize computation.
 
-            # get the linear function and the scaled covariance matrix for the effect
-            L = self.__linfun__(self.effects[e])
+            Input:
+                e:  (str)
+                    the name of an effect
+            
+            Output:
+                df: (pandas.DataFrame)
+                    one row dataframe containing the anova table output of the effect "e".
+            """
 
             # obtain the contrast matrix
             J = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
-            M = pd.DataFrame(index=L.index)
+            M = pd.DataFrame(index=[":".join(j) for j in J])
             for i, j in enumerate(J[:-1]):
                 for z in J[(i + 1):]:
 
@@ -1878,30 +1920,31 @@ class Anova(LinearRegression):
 
                         # create the contrast
                         col = " - ".join([":".join(j), ":".join(z)])
-                        cmj = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=[col])
+                        cmj = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=[col])
                         cmj.loc[":".join(j)] = 1
                         cmj.loc[":".join(z)] = -1
 
                         # add the contrast
                         M = pd.concat([M, cmj], axis=1)
-
-            # adjust the linear function for the contrasts
-            C = M.T.dot(L)
-
+            
             # get the emmeans but keep only the columns of insterest
             emm_cols = ["Estimate", "Standard error",
                         "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
                         "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha)),
                         "T stat", "DF", "T crit", "P", "P adj. (Holm-Sidak)"]
-            em = self.__emmeans__(self.effects[e], C)[emm_cols]
+            em = self.__emmeans__(self.effects[e], M)[emm_cols]
             ix = np.atleast_2d([[e, i] for i in em.index])
             em.index = pd.MultiIndex.from_arrays(ix.T)
 
-            # store the output
-            EM = EM.append(em)
+            return em
+
+        # parallelize computation
+        pool = ProcessingPool(cpu_count())
+        R = pool.map(pfun, [i for i in self.effects if i != "Intercept"])
+        pool.close()
 
         # return the outcomes rounded to the desired decimal
-        return EM.apply(self.__rnd__, decimals=digits)
+        return pd.concat(R, axis=0).apply(self.__rnd__, decimals=digits)
 
 
 
@@ -1929,208 +1972,162 @@ class Anova(LinearRegression):
 
 
 
-    def __linfun__(self, E):
-        """
-        get the linear function corresponding to the given effect.
-
-        Input:
-            E:  (AnovaEffect)
-                The effect about which the emmeans have to be calculated.
-
-        Output:
-            M:  (pandas.DataFrame)
-                a dataframe containing the linear function for the effect.
-        """
-
-        # obtain the linear function
-        I = np.unique(self.source[E.label.split(":")].values.astype(str), axis=0)
-        I = pd.Index([":".join(i) for i in I])
-        C = self.coefs.index
-        L = pd.DataFrame(np.zeros((len(I), len(C))), index=I, columns=C)
-        P = model(self.source[E.label.split(":")], E.label, include_intercept=True)
-        L.loc[P.index, P.columns] = P.values
-        return L
-
-
-
-    def __emmeans__(self, E, L=None):
+    def __emmeans__(self, E, C=None):
         """
         return the estimated marginal means for an effect given through its linear function and its
         scaled covariance matrix.
 
         Input:
 
-            L:  (pandas.DataFrame)
-                the dataframe containing the linear function of an effect. Typically it is the output
-                of the __linfun__ function.
+            E:  (pyomech.AnovaEffect)
+                the effect on which calculating emmeans.
 
-            V:  (pandas.DataFrame)
-                the dataframe containing the covariance matrix of the coefficients scaled by the
-                error of an effect. Typically it is the output of the __cov_scaled__ function.
+            C:  (pandas.DataFrame)
+                the dataframe containing the desired contrast matrix.
 
         Output:
             M:  (pandas.DataFrame)
                 a dataframe containing the emmeans for the effect.
         """
+        
 
-        def cov_scaled(Y):
+        # internal methods
+        def get_MM(Y):
             """
-            return the covariance matrix scaled by the mean error of the effect.
+            return the marginal means given the source of data.
 
             Input:
                 Y:  (pandas.DataFrame)
                     the dependent variable on which calculating the sum of squares.
 
             Output:
-                M:  (pandas.DataFrame)
-                    a dataframe containing the covariance matrix scaled on the effect.
+                S:  (pandas.DataFrame)
+                    the estimated marginal means.
             """
-            if E.label != "Intercept":
-                C = E.P.columns
-                S = Vi.copy()
-                S.loc[C, C] *= (E.SSd(Y) / E.DFd())
+            return K.dot(Y.values).T
+
+
+        def cov_scaled(Y):
+            """
+            scale the covariance by the error of the effect
+            """
+
+            S = Vi.copy()
+            S.loc[E.P.columns, E.P.columns] *= (E.SSd(Y) / E.DFd())
             return S
-
-
-        def get_MM(Y):
-            """
-            obtain estimated marginal means according to the provided dependent variable and the current model.
-
-            Input:
-
-                Y:  (pandas.DataFrame)
-                    the dataframe containing the dependent variable data.
-
-            Output:
-                MM: (pandas.DataFrame)
-                    the dataframe containing the estimated standard errors.
-            """
-            em = K.dot(Y.values).T
-            em.index = pd.Index(['Estimate'])
-            return em
 
 
         def get_SE(Y):
             """
-            obtain standard errors according to the provided dependent variable and the current model.
+            return the standard errors given the source of data.
 
             Input:
-
                 Y:  (pandas.DataFrame)
-                    the dataframe containing the dependent variable data.
+                    the dependent variable on which calculating the sum of squares.
 
             Output:
-                SE: (pandas.DataFrame)
-                    the dataframe containing the estimated standard errors.
+                S:  (pandas.DataFrame)
+                    the estimated marginal means.
             """
-            # obtain the standard errors
-            M = L.dot(cov_scaled(Y)) * L
-            se = pd.DataFrame(M.sum(1)).T.apply(np.sqrt)
-            se.index = pd.Index(['Standard error'])
-            return se
+            return pd.DataFrame((M.dot(cov_scaled(Y)) * M).sum(1)).T.apply(np.sqrt)
 
 
-        def get_T(Y):
+        def t_test(Y):
             """
-            obtain T values according to the provided dependent variable and the current model.
+            get the t value given the source of data.
 
             Input:
-
                 Y:  (pandas.DataFrame)
-                    the dataframe containing the dependent variable data.
-                
+                    the dependent variable on which calculating the sum of squares.
+
             Output:
-                T: (pandas.DataFrame)
-                    the dataframe containing the T values.
+                S:  (pandas.DataFrame)
+                    the estimated marginal means.
             """
-            T = get_MM(Y) / get_SE(Y).values
-            T.index = pd.Index(['T stat'])
+            return get_MM(Y - Y.mean() if C is None else 0) / get_SE(Y).values
 
 
-        # get the linear function
-        if L is None:
-            L = self.__linfun__(E)
+        # obtain the linear function
+        I = np.unique(self.source[E.label.split(":")].values.astype(str), axis=0)
+        I = pd.Index([":".join(i) for i in I])
+        G = self.coefs.index
+        L = pd.DataFrame(np.zeros((len(I), len(G))), index=I, columns=G)
+        P = model(self.source[E.label.split(":")], E.label, include_intercept=True)
+        L.loc[P.index, P.columns] = P.values
+        
+        # adjust L for the contrasts
+        M = C.T.dot(L) if C is not None else L
 
         # get the DV
         Y = pd.DataFrame(self.source[self.DV])
 
         # get the unscaled coefficients
         V = self.cov_unscaled()
+        Vi = V.copy()
+        I = self.effects["Intercept"].SSd(Y) / self.effects["Intercept"].DFd()
+        Vi.loc["Intercept", "Intercept"] *= I
         XX = self.X.copy()
         XX.insert(0, "Intercept", np.tile(1, XX.shape[0]))
-        K = L.dot(V).dot(XX.T)
-        Vi = V.copy()
-        Vi.loc["Intercept", "Intercept"] *= self.effects["Intercept"].SSd(Y) / self.effects["Intercept"].DFd()
+        K = M.dot(V).dot(XX.T)
 
         # get the estimates
         em = get_MM(Y)
+        em.index = pd.Index(['Estimate'])
 
         # get the standard errors
         se = get_SE(Y)
+        se.index = pd.Index(['Standard error'])
 
         # T value
-        tv = get_T(Y)
-
-        # build the pdf
-        if np.all(abs(L.values) <= 1):
-            A = (design(self.source[E.label.split(":")], E.label.split(":")) * em.values).sum(1).values
-        else:
-            A = np.zeros(Y.shape)
-        pdf = pd.concat([get_T(Y.iloc[p] - A.values) for p in self.permutations], axis=0)
-        if self.two_tailed and pdf.shape[0] > 0:
-            pdf = pdf.abs()
-
-        # get T-critial
-        tc = em.copy()
-        al = 1 - (self.alpha * (0.5 if self.two_tailed else 1))
-        if pdf.shape[0] == 0:
-
-            # get the degrees of freedom used to calculate confidence intervals
-            dfN = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=["DFc"])
-            dfD = pd.DataFrame(np.zeros((L.shape[0], 1)), index=L.index, columns=["DFc"])
-            M = L.dot(cov_scaled(Y)) * L
-            for e in self.effects:
-                ii = self.effects[e].P.columns
-                dfe = self.effects[e].DFd()
-                dfN += pd.DataFrame(pd.DataFrame(M[ii]).sum(1), columns=["DFc"])
-                dfD += pd.DataFrame(pd.DataFrame(M[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
-            dfc = (dfN ** 2 / dfD).T
-
-            # critical T value
-            for t in tc:
-                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[tc.index, t])
-
-        else:
-
-            # critical T
-            for t in tc:
-                tc.loc[tc.index, t] = np.quantile(pdf[t].values.flatten(), al)
-        tc.index = pd.Index(['T crit'])
-
-        # confidence intervals
-        ci_inf = em.copy()
-        ci_sup = em.copy()
-        for t in ci_inf:
-            c = tc.loc[tc.index, t].values * se.loc[se.index, t].values
-            ci_inf.loc[ci_inf.index, t] = em.loc[em.index, t].values - c
-            ci_sup.loc[ci_sup.index, t] = em.loc[em.index, t].values + c
-        ci_inf.index = pd.Index(["{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha))])
-        ci_sup.index = pd.Index(["{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))])
+        tv = t_test(Y)
+        tv.index = pd.Index(['T stat'])
+        if self.two_tailed:
+            tv = tv.abs()
 
         # get the effect degrees of freedom
         df = em.copy()
         df.loc[df.index] = E.DFd()
         df.index = pd.Index(["DF"])
 
-        # get the test p values
-        pv = tv.copy()
-        for t in tv:
-            v = abs(tv.loc[tv.index, t]) if self.two_tailed else tv.loc[tv.index, t]
-            if pdf.shape[0] == 0:
-                pv.loc[pv.index, t] = st.t.sf(v, df.loc[df.index, t])
-            else:
-                pv.loc[pv.index, t] = (np.sum(pdf[t].values > v.values) + 1) / (pdf.shape[0] + 1)
+        # build the pdf
+        pdf = pd.concat([t_test(Y.iloc[p]) for p in self.permutations], axis=0)
+        if self.two_tailed and pdf.shape[0] > 0:
+            pdf = pdf.abs()
+
+        # get the degrees of freedom to extract confidence intervals in case of parametric
+        # solution is required
+        if pdf.shape[0] == 0:
+            dfN = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=["DFc"])
+            dfD = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=["DFc"])
+            H = M.dot(cov_scaled(Y)) * M
+            for e in self.effects:
+                ii = self.effects[e].P.columns
+                dfe = self.effects[e].DFd()
+                dfN += pd.DataFrame(pd.DataFrame(H[ii]).sum(1), columns=["DFc"])
+                dfD += pd.DataFrame(pd.DataFrame(H[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
+            dfc = (dfN ** 2 / dfD).T
+
+        # get t-crit,, p-values and confidence intervals
+        tc = em.copy()
+        al = 1 - (self.alpha * (0.5 if self.two_tailed else 1))
+        pv = em.copy()
+        ci_inf = em.copy()
+        ci_sup = em.copy()
+        for t in tc:
+            if pdf.shape[0] == 0: # parametric solution
+                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[tc.index, t])                # t-crit
+                pv.loc[pv.index, t] = st.t.sf(tv.loc[tv.index, t], df.loc[df.index, t]) # p-value
+            else: # non-parametric solution
+                tc.loc[tc.index, t] = np.quantile(pdf[t].values.flatten(), al)
+                pv.loc[pv.index, t] = (np.sum(pdf[t].values > tv.loc[tv.index, t].values) + 1)
+                pv.loc[pv.index, t] /= (pdf.shape[0] + 1)
+            c = tc.loc[tc.index, t].values * se.loc[se.index, t].values # confidence intervals
+            ci_inf.loc[ci_inf.index, t] = em.loc[em.index, t].values - c
+            ci_sup.loc[ci_sup.index, t] = em.loc[em.index, t].values + c
+        tc.index = pd.Index(['T crit'])
         pv.index = pd.Index(['P'])
+        ci_inf.index = pd.Index(["{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha))])
+        ci_sup.index = pd.Index(["{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))])
 
         # get the corrected p-values
         pa = p_adjust(pv.values.flatten())["Holm-Sidak"].values
