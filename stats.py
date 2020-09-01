@@ -2165,3 +2165,613 @@ class Anova(LinearRegression):
         pd.set_option("display.max_rows", def_max_row)
         pd.set_option("precision", def_precision)
         return O
+
+
+class Anova1D(LinearRegression):
+
+
+
+    def __init__(self, source, dv, iv, subjects=None, alpha=0.05, two_tailed=True, n_perm=0, exclude=[]):
+        """
+        Generate an Anova class object.
+
+        Input:
+            source:         (pandas.DataFrame)
+                            the dataframe where all variables are stored.
+
+            dv:             (str)
+                            the name of the column defining the dependent variable of the model.
+
+            iv:             (list)
+                            the list of column names containing the indipendent variables.
+
+            subjects:       (str or None)
+                            If none, the factors are treated as "between-only" factors. Conversely,
+                            if a list or a 1D ndarray is provided, the values are used to define
+                            within-subjects errors.
+                            If such value is provided, it is also added to source.
+
+            alpha:          (float)
+                            the level of significance.
+
+            two_tailed:     (bool)
+                            should the p-value be calculated from a two-tailed distribution?
+
+            n_perm:         (int)
+                            the number of permutations to be used for drawing the test Probability
+                            Density Function (PDF).
+                            If 0 (Default) p values of the F tests are calculated using the F
+                            distribution with degrees of freedom calculated from data.
+                            If -1, all possible permutations of the the available data are used to
+                            obtain the PDF which, in turn, is used to calculated the p values.
+                            Please note that this setting might result in an EXTREMELY long
+                            computational time.
+                            If a positive int is provided, the PDF is obtained throught the given
+                            number of random permutations.
+
+            exclude:        (list)
+                            a list of str objects defining the effects which should not be part of
+                            the model. This is useful the user aims at excluding specific main or
+                            interaction effects from the model. Please note that the interaction
+                            effects must be provided as the names of the effects involved separated
+                            by a ":". E.g. --> Main effects: "A", "B" --> Interaction: "A:B"
+        """
+
+        #* DATA PREPARATION
+
+        # check the variables
+        assert isinstance(source, pd.DataFrame), "source must be a pandas.DataFrame instance."
+        assert isinstance(iv, list), "'iv' must be a list instance."
+        assert isinstance(dv, list), "'dv' must be a list instance."
+        source_missing = "{} not found in 'source'."
+        for i in iv + dv:
+            assert np.any([i == j for j in source]), source_missing.format(i)
+        self.DV = dv
+        self.IV = iv
+
+        # check alpha
+        assert isinstance(alpha, float), "alpha must be a float in the (0, 1) range."
+        assert alpha > 0 and alpha < 1, "alpha must be a float in the (0, 1) range."
+        self.alpha = alpha
+
+        # check two_tailed
+        assert isinstance(two_tailed, bool), "'two_tailed' must be a bool object."
+        self.two_tailed = two_tailed
+
+        # check the subjects
+        if subjects is not None:
+            assert np.any([subjects == i for i in source]), source_missing.format(subjects)
+            SRC = source.copy()
+
+        else:
+            SRC = source.astype(str)
+            unique_combs = np.unique(SRC[iv].values, axis=0)
+            for i in np.arange(len(unique_combs)):
+                cmb = unique_combs[i]
+                name = 'S{}'.format(i + 1)
+                index = SRC.loc[SRC.isin(cmb).all(1)].index.to_numpy()
+                SRC.loc[index, 'SBJ'] = name
+            subjects = 'SBJ'
+
+        # regroup the source
+        GRP = SRC.groupby(iv + [subjects], as_index=False).mean()
+        self.source = GRP[iv + dv]
+        self.source.index = pd.Index(GRP[subjects].values.flatten())
+
+        # check n_perm
+        assert isinstance(n_perm, int), "'n_perm' must be an int object."
+        self.max_perm = factorial(self.source.shape[0])
+        if n_perm > self.max_perm or n_perm < 0:
+            self.n_perm = self.max_perm
+        else:
+            self.n_perm = n_perm
+
+        # draw the random permutation index
+        if self.n_perm > 0:
+            self.permutations = np.atleast_2d(np.arange(self.source.shape[0]))
+            np.random.seed()
+            while len(self.permutations) <= self.n_perm:
+                new = np.atleast_2d(np.random.permutation(self.source.shape[0]))
+                self.permutations = np.vstack([self.permutations, new])
+                self.permutations = np.unique(self.permutations, axis=0)
+            self.permutations = self.permutations[1:]
+        else:
+            self.permutations = np.atleast_2d([])
+
+        # separate between and within factors
+        BV = []
+        WV = []
+        for i in self.source:
+            if not np.any([i == j for j in dv]):
+                if isBetween(pd.DataFrame(self.source[i])):
+                    BV += [i]
+                else:
+                    WV += [i]
+        self.between = BV
+        self.within = WV
+        self.covariates = [i for i in self.IV if isCovariate(pd.DataFrame(self.source[i]))]
+
+        # check the exclusions
+        assert isinstance(exclude, list), "'exclude' must be a list object."
+        for ex in exclude:
+            ex_ck = [np.any([i == j for j in self.source.columns]) for i in ex.split(":")]
+            assert np.all(ex_ck), "{} or one of its components was not found in source.".format(ex)
+        self.exclude = exclude
+
+        # initialize the object
+        X = self.__combine__(self.between + self.within)
+        X = pd.concat([contrasts(self.source[i.split(":")]) for i in X], axis=1)
+        Y = pd.DataFrame(self.source[dv])
+        super(Anova1D, self).__init__(Y, X)
+
+
+        #* DESIGN PARAMETERS
+
+        # get the between and within subjects variable combinations
+        BV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.between)}
+        WV_combs = {'Intercept': ["Intercept"], **self.__combine__(self.within)}
+
+        # create the between-subjects data
+        GRP = self.source.copy()
+        GRP.insert(0, "SBJ", self.source.index.to_numpy())
+
+        # between
+        if len(self.between) > 0:
+            X = design(GRP, self.between)
+        else:
+            X = pd.DataFrame(index=GRP.index)
+        X.insert(0, "Intercept", np.tile(1, GRP.shape[0]))
+        X = contrasts(design(GRP, ["SBJ"], normalize=True).T.dot(X))
+
+        # within
+        W = design(GRP, self.within)
+
+        # subjects
+        S = design(GRP, ["SBJ"])
+
+
+        #* EFFECTS CALCULATION
+
+        self.effects = {}
+        I = pd.DataFrame(np.eye(X.shape[1]), index=X.columns, columns=X.columns)
+        for j, b in enumerate(BV_combs):
+
+            # between-subjects linear function
+            L = pd.DataFrame(I[np.concatenate([k.split(":") for k in BV_combs[b]]).flatten()]).T
+
+            # design matrix of the within effects
+            for i, w in enumerate(WV_combs):
+                D = pd.DataFrame(self.source[self.within])
+                if w == "Intercept":
+                    P = model(D, include_intercept=True)
+                else:
+                    P = model(D, w, include_intercept=False)
+
+                # between
+                isB = (w == "Intercept") & (b != "Intercept")
+
+                # label
+                lbl = b if w == "Intercept" else (w if b == "Intercept" else ":".join([b, w]))
+
+                # store the effect
+                self.effects[lbl] = AnovaEffect(GRP, self.DV, isB, lbl, X, W, S, P, L,
+                                                self.permutations)
+
+
+
+    def anova_table(self, digits=4):
+        """
+        Return a pandas.DataFrame containing the Anova analysis of the entered model.
+
+        Input:
+
+            digits: (int)
+                    the number of decimals to be used in representing the outcomes.
+
+        Output:
+
+            D:      (pandas.DataFrame)
+                    a dataframe containing all the outcomes.
+        """
+
+        # get the total error SS to calculate the generalized effect sizes
+        SSe = np.sum([self.effects[e].SSd(self.effects[e].Y) for e in self.effects])
+        
+        # parallelizing function
+        def pfun(e):
+            """
+            internal function used to parallelize computation.
+
+            Input:
+                e:  (str)
+                    the name of an effect
+            
+            Output:
+                df: (pandas.DataFrame)
+                    one row dataframe containing the anova table output of the effect "e".
+            """
+            return pd.concat([
+                self.effects[e].variance_test(),
+                self.effects[e].F_test(),
+                self.effects[e].sphericity_test(),
+                self.effects[e].effect_sizes(SSe)
+                ], axis=1)
+
+        # parallelize computation
+        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects])
+        return pd.concat(R, axis=0).dropna(axis=1, how='all').apply(self.__rnd__, decimals=digits)
+
+
+
+    def descriptive_table(self, digits=4):
+        """
+        Return a table containing several descriptive statistics calculated from both the
+        residuals and all the model combinations.
+        If any covariate exists in the model, fixed values are used to obtain descriptive stats.
+
+        Input:
+
+            digits: (int)
+                    the number of decimals to be used in representing the outcomes.
+
+        Output:
+
+            D:      (pandas.DataFrame)
+                    a dataframe containing all the outcomes.
+        """
+
+        # parallelizing function
+        def pfun(e):
+            """
+            internal function used to parallelize computation.
+
+            Input:
+                e:  (str)
+                    the name of an effect
+            
+            Output:
+                df: (pandas.DataFrame)
+                    one row dataframe containing the anova table output of the effect "e".
+            """
+
+            # get the emmeans but keep only the columns of insterest
+            emm_cols = ["Estimate", "Standard error",
+                        "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
+                        "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))]
+            M = self.__emmeans__(self.effects[e])[emm_cols]
+            ex = np.atleast_2d([[e, i] for i in M.index])
+            M.index = pd.MultiIndex.from_arrays(ex.T)
+
+            # get the unique combinations for each effect
+            combs = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
+
+            # get the data corresponding to each combination
+            D = pd.DataFrame()
+            for c in combs:
+
+                # data
+                dv = self.source.loc[self.source[e.split(":")].isin(c).all(1)][self.DV].values.flatten()
+
+                # get the descriptive stats
+                K = describe(dv)
+                K.index = pd.MultiIndex.from_arrays(np.atleast_2d([[e, ":".join(c)]]).T)
+                D = D.append(K, sort=False)
+
+            # adjust the column index
+            C = [["Descriptive stats", i] for i in D.columns]
+            D.columns = pd.MultiIndex.from_arrays(np.atleast_2d(C).T)
+            F = [["Estimated Marginal Means", i] for i in M.columns]
+            M.columns = pd.MultiIndex.from_arrays(np.atleast_2d(F).T)
+
+            # return the concatenated data
+            return pd.concat([D, M], axis=1, sort=False)
+
+        # parallelize computation
+        G = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
+        G = pd.concat(G, axis=0, sort=False)
+
+        # get descriptive statistics of the residuals
+        R = describe(self.residuals().values.flatten())
+        R.index = pd.MultiIndex.from_arrays(np.atleast_2d([["Residuals", ""]]).T)
+        C = [["Descriptive stats", i] for i in R.columns]
+        R.columns = pd.MultiIndex.from_arrays(np.atleast_2d(C).T)
+        G = G.append(R, sort=False)
+
+        # merge and return
+        return G.apply(self.__rnd__, decimals=digits)
+
+
+
+    def contrasts_table(self, digits=4):
+        """
+        Return pairwise contrasts based on estimated marginal means for each effect.
+
+        Input:
+
+            digits: (int)
+                    the number of decimals to be used in representing the outcomes.
+
+        Output:
+
+            D:      (pandas.DataFrame)
+                    a dataframe containing all the outcomes.
+        """
+
+                # parallelizing function
+        def pfun(e):
+            """
+            internal function used to parallelize computation.
+
+            Input:
+                e:  (str)
+                    the name of an effect
+            
+            Output:
+                df: (pandas.DataFrame)
+                    one row dataframe containing the anova table output of the effect "e".
+            """
+
+            # obtain the contrast matrix
+            J = pd.DataFrame(self.source[e.split(":")])
+            J = np.atleast_2d(np.unique(J.values.astype(str), axis=0))
+            M = pd.DataFrame(index=[":".join(j) for j in J])
+            for i, j in enumerate(J[:-1]):
+                for z in J[(i + 1):]:
+
+                    # check if the actual combination is a required contrast
+                    if np.sum([1 if k != f else 0 for k, f in zip(j, z)]) == 1:
+
+                        # create the contrast
+                        col = " - ".join([":".join(j), ":".join(z)])
+                        cmj = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=[col])
+                        cmj.loc[":".join(j)] = 1
+                        cmj.loc[":".join(z)] = -1
+
+                        # add the contrast
+                        M = pd.concat([M, cmj], axis=1)
+            
+            # get the emmeans but keep only the columns of insterest
+            emm_cols = ["Estimate", "Standard error",
+                        "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
+                        "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha)),
+                        "T stat", "DF", "T crit", "P", "P adj. (Holm-Sidak)"]
+            em = self.__emmeans__(self.effects[e], M)[emm_cols]
+            ix = np.atleast_2d([[e, i] for i in em.index])
+            em.index = pd.MultiIndex.from_arrays(ix.T)
+
+            return em
+
+        # parallelize computation
+        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
+
+        # return the outcomes rounded to the desired decimal
+        return pd.concat(R, axis=0).apply(self.__rnd__, decimals=digits)
+
+
+
+    def __rnd__(self, x, decimals=4):
+        """
+        internal function used to round values.
+
+        Input:
+
+            x:          (object)
+                        an object to be rounded
+
+            decimals:   (int)
+                        the number of decimals.
+
+        Output:
+
+            r:  (object)
+                the object rounded (where possible) or the same object entered, otherwise.
+        """
+        try:
+            return np.around(x, decimals)
+        except Exception:
+            return x
+
+
+
+    def __emmeans__(self, E, C=None):
+        """
+        return the estimated marginal means for an effect given through its linear function and its
+        scaled covariance matrix.
+
+        Input:
+
+            E:  (pyomech.AnovaEffect)
+                the effect on which calculating emmeans.
+
+            C:  (pandas.DataFrame)
+                the dataframe containing the desired contrast matrix.
+
+        Output:
+            M:  (pandas.DataFrame)
+                a dataframe containing the emmeans for the effect.
+        """
+        
+
+        # internal methods
+        def get_MM(Y):
+            """
+            return the marginal means given the source of data.
+
+            Input:
+                Y:  (pandas.DataFrame)
+                    the dependent variable on which calculating the sum of squares.
+
+            Output:
+                S:  (pandas.DataFrame)
+                    the estimated marginal means.
+            """
+            return K.dot(Y.values).T
+
+
+        def cov_scaled(Y):
+            """
+            scale the covariance by the error of the effect
+            """
+
+            S = Vi.copy()
+            S.loc[E.P.columns, E.P.columns] *= (E.SSd(Y) / E.DFd())
+            return S
+
+
+        def get_SE(Y):
+            """
+            return the standard errors given the source of data.
+
+            Input:
+                Y:  (pandas.DataFrame)
+                    the dependent variable on which calculating the sum of squares.
+
+            Output:
+                S:  (pandas.DataFrame)
+                    the estimated marginal means.
+            """
+            return pd.DataFrame((M.dot(cov_scaled(Y)) * M).sum(1)).T.apply(np.sqrt)
+
+
+        def t_test(Y):
+            """
+            get the t value given the source of data.
+
+            Input:
+                Y:  (pandas.DataFrame)
+                    the dependent variable on which calculating the sum of squares.
+
+            Output:
+                S:  (pandas.DataFrame)
+                    the estimated marginal means.
+            """
+            return get_MM(Y - (Y.mean(0) if C is None else 0)) / get_SE(Y).values
+
+
+        # obtain the linear function
+        I = np.unique(self.source[E.label.split(":")].values.astype(str), axis=0)
+        I = pd.Index([":".join(i) for i in I])
+        G = self.coefs.index
+        L = pd.DataFrame(np.zeros((len(I), len(G))), index=I, columns=G)
+        P = model(self.source[E.label.split(":")], E.label, include_intercept=True)
+        L.loc[P.index, P.columns] = P.values
+        
+        # adjust L for the contrasts
+        M = C.T.dot(L) if C is not None else L
+
+        # get the DV
+        Y = pd.DataFrame(self.source[self.DV])
+
+        # get the unscaled coefficients
+        V = self.cov_unscaled()
+        Vi = V.copy()
+        I = self.effects["Intercept"].SSd(Y) / self.effects["Intercept"].DFd()
+        Vi.loc["Intercept", "Intercept"] *= I
+        XX = self.X.copy()
+        XX.insert(0, "Intercept", np.tile(1, XX.shape[0]))
+        K = M.dot(V).dot(XX.T)
+
+        # get the estimates
+        em = get_MM(Y)
+        em.index = pd.Index(['Estimate'])
+
+        # get the standard errors
+        se = get_SE(Y)
+        se.index = pd.Index(['Standard error'])
+
+        # T value
+        tv = t_test(Y)
+        tv.index = pd.Index(['T stat'])
+        if self.two_tailed:
+            tv = tv.abs()
+
+        # get the effect degrees of freedom
+        df = em.copy()
+        df.loc[df.index] = E.DFd()
+        df.index = pd.Index(["DF"])
+
+        # build the pdf
+        pdf = pd.concat([t_test(Y.iloc[p]) for p in self.permutations], axis=0)
+        if self.two_tailed and pdf.shape[0] > 0:
+            pdf = pdf.abs()
+
+        # get the degrees of freedom to extract confidence intervals in case of parametric
+        # solution is required
+        if pdf.shape[0] == 0:
+            dfN = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=["DFc"])
+            dfD = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=["DFc"])
+            H = M.dot(cov_scaled(Y)) * M
+            for e in self.effects:
+                ii = self.effects[e].P.columns
+                dfe = self.effects[e].DFd()
+                dfN += pd.DataFrame(pd.DataFrame(H[ii]).sum(1), columns=["DFc"])
+                dfD += pd.DataFrame(pd.DataFrame(H[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
+            dfc = (dfN ** 2 / dfD).T
+
+        # get t-crit, p-values and confidence intervals
+        tc = em.copy()
+        al = 1 - (self.alpha * (0.5 if self.two_tailed else 1))
+        pv = em.copy()
+        ci_inf = em.copy()
+        ci_sup = em.copy()
+        for t in tc:
+            if pdf.shape[0] == 0: # parametric solution
+                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[tc.index, t])                # t-crit
+                pv.loc[pv.index, t] = st.t.sf(tv.loc[tv.index, t], df.loc[df.index, t]) # p-value
+            else: # non-parametric solution
+                tc.loc[tc.index, t] = np.quantile(pdf[t].values.flatten(), al)
+                pv.loc[pv.index, t] = (np.sum(pdf[t].values > tv.loc[tv.index, t].values) + 1)
+                pv.loc[pv.index, t] /= (pdf.shape[0] + 1)
+            c = tc.loc[tc.index, t].values * se.loc[se.index, t].values # confidence intervals
+            ci_inf.loc[ci_inf.index, t] = em.loc[em.index, t].values - c
+            ci_sup.loc[ci_sup.index, t] = em.loc[em.index, t].values + c
+        tc.index = pd.Index(['T crit'])
+        pv.index = pd.Index(['P'])
+        ci_inf.index = pd.Index(["{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha))])
+        ci_sup.index = pd.Index(["{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))])
+
+        # get the corrected p-values
+        pa = p_adjust(pv.values.flatten())["Holm-Sidak"].values.flatten()
+        pa = pd.DataFrame(pa, index=pv.columns, columns=["P adj. (Holm-Sidak)"]).T
+
+        # return the table
+        return pd.concat([em, se, ci_inf, ci_sup, tv, df, tc, pv, pa], axis=0).T
+
+
+
+    def __combine__(self, x):
+        """
+        Internal function used to combine labels and return the groups combinations according to the
+        available data.
+
+        Input:
+
+            x:  (list)
+                a list of str.
+
+        Output:
+
+            c:  (dict)
+                a dict with each factor combination as key and the corresponding factors as values.
+        """
+        return {":".join(j):
+                contrasts(self.source[list(j)]).columns.to_numpy().tolist()
+                for i in np.arange(len(x)) + 1 for j in it.combinations(x, i)
+                if not np.any([":".join(list(j)) == k for k in self.exclude])}
+
+
+
+    def __repr__(self):
+        return self.__str__()
+
+
+
+    def __str__(self):
+        def_max_row = pd.get_option("display.max_rows")
+        def_precision = pd.get_option("precision")
+        pd.set_option("display.max_rows", 999)
+        pd.set_option("precision", 3)
+        O = "\n\n".join([self.table.__str__(), self.normality_test.__str__()])
+        pd.set_option("display.max_rows", def_max_row)
+        pd.set_option("precision", def_precision)
+        return O
