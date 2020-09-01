@@ -2039,7 +2039,7 @@ class Anova(LinearRegression):
                 S:  (pandas.DataFrame)
                     the estimated marginal means.
             """
-            return get_MM(Y - Y.mean() if C is None else 0) / get_SE(Y).values
+            return get_MM(Y - (Y.mean(0) if C is None else 0)) / get_SE(Y).values
 
 
         # obtain the linear function
@@ -2102,7 +2102,7 @@ class Anova(LinearRegression):
                 dfD += pd.DataFrame(pd.DataFrame(H[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
             dfc = (dfN ** 2 / dfD).T
 
-        # get t-crit,, p-values and confidence intervals
+        # get t-crit, p-values and confidence intervals
         tc = em.copy()
         al = 1 - (self.alpha * (0.5 if self.two_tailed else 1))
         pv = em.copy()
@@ -2126,7 +2126,7 @@ class Anova(LinearRegression):
 
         # get the corrected p-values
         pa = p_adjust(pv.values.flatten())["Holm-Sidak"].values
-        pa = pd.DataFrame(pa, index=L.index, columns=["P adj. (Holm-Sidak)"]).T
+        pa = pd.DataFrame(pa, index=pv.index, columns=["P adj. (Holm-Sidak)"]).T
 
         # return the table
         return pd.concat([em, se, ci_inf, ci_sup, tv, df, tc, pv, pa], axis=0).T
