@@ -1828,9 +1828,9 @@ class Anova(LinearRegression):
             emm_cols = ["Estimate", "Standard error",
                         "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
                         "{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))]
-            em = self.__emmeans__(self.effects[e])[emm_cols]
-            ex = np.atleast_2d([[e, i] for i in em.index])
-            em.index = pd.MultiIndex.from_arrays(ex.T)
+            M = self.__emmeans__(self.effects[e])[emm_cols]
+            ex = np.atleast_2d([[e, i] for i in M.index])
+            M.index = pd.MultiIndex.from_arrays(ex.T)
 
             # get the unique combinations for each effect
             combs = np.atleast_2d(np.unique(self.source[e.split(":")].values.astype(str), axis=0))
@@ -1845,33 +1845,29 @@ class Anova(LinearRegression):
                 # get the descriptive stats
                 K = describe(dv)
                 K.index = pd.MultiIndex.from_arrays(np.atleast_2d([[e, ":".join(c)]]).T)
-                D = D.append(K)
+                D = D.append(K, sort=False)
 
-            return [em, D]
+            # adjust the column index
+            C = [["Descriptive stats", i] for i in D.columns]
+            D.columns = pd.MultiIndex.from_arrays(np.atleast_2d(C).T)
+            F = [["Estimated Marginal Means", i] for i in M.columns]
+            M.columns = pd.MultiIndex.from_arrays(np.atleast_2d(F).T)
+
+            # return the concatenated data
+            return pd.concat([D, M], axis=1, sort=False)
 
         # parallelize computation
-        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
-        
-        # get descriptive and marginal means stats
-        M = pd.DataFrame()
-        D = pd.DataFrame()
-        for em, ds in R:
-            M = M.append(em)
-            D = D.append(ds)
+        G = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
+        G = pd.concat(G, axis=0, sort=False)
 
         # get descriptive statistics of the residuals
         R = describe(self.residuals().values.flatten())
         R.index = pd.MultiIndex.from_arrays(np.atleast_2d([["Residuals", ""]]).T)
-        D = D.append(R)
-
-        # adjust the column index
-        C = [["Descriptive stats", i] for i in D.columns]
-        D.columns = pd.MultiIndex.from_arrays(np.atleast_2d(C).T)
-        F = [["Estimated Marginal Means", i] for i in M.columns]
-        M.columns = pd.MultiIndex.from_arrays(np.atleast_2d(F).T)
+        C = [["Descriptive stats", i] for i in R.columns]
+        R.columns = pd.MultiIndex.from_arrays(np.atleast_2d(C).T)
+        G = G.append(R, sort=False)
 
         # merge and return
-        G = pd.concat([D, M], axis=1)
         return G.apply(self.__rnd__, decimals=digits)
 
 
@@ -2125,8 +2121,8 @@ class Anova(LinearRegression):
         ci_sup.index = pd.Index(["{:0.0f}% C.I. (sup)".format(100 * (1 - self.alpha))])
 
         # get the corrected p-values
-        pa = p_adjust(pv.values.flatten())["Holm-Sidak"].values
-        pa = pd.DataFrame(pa, index=pv.index, columns=["P adj. (Holm-Sidak)"]).T
+        pa = p_adjust(pv.values.flatten())["Holm-Sidak"].values.flatten()
+        pa = pd.DataFrame(pa, index=pv.columns, columns=["P adj. (Holm-Sidak)"]).T
 
         # return the table
         return pd.concat([em, se, ci_inf, ci_sup, tv, df, tc, pv, pa], axis=0).T
