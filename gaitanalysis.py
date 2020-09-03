@@ -620,7 +620,8 @@ class RunningAnalysis():
                 pk = np.sort(np.append(find_peaks(sp, plot=False), find_peaks(-sp, plot=False)))[0]
 
                 # get the first point in the signal below th and after pk
-                st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
+                # st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
+                st = pk
             
             except Exception:
                 return np.nan
