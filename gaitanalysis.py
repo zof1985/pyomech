@@ -516,15 +516,15 @@ class RunningAnalysis():
 
         # get the foot-strikes
         fs_loc = np.append([0], np.diff(blackbox['stato_w'].values.flatten())) == 1
-        fs = blackbox.loc[fs_loc].index.to_numpy() + self.blackbox_delays['stato_w']
+        fs = blackbox.loc[fs_loc].index.to_numpy() + self.blackbox_delays()['stato_w']
             
         # get the mid-stances
         ms_loc = np.append([0], np.diff(blackbox['wmin'].values.flatten())) == 1
-        ms = blackbox.loc[ms_loc].index.to_numpy() + self.blackbox_delays['wmin']
+        ms = blackbox.loc[ms_loc].index.to_numpy() + self.blackbox_delays()['wmin']
         
         # get the toe-offs
         to_loc = np.append([0], np.diff(blackbox['wmax'].values.flatten())) == 1
-        to = blackbox.loc[to_loc].index.to_numpy() + self.blackbox_delays['wmin']
+        to = blackbox.loc[to_loc].index.to_numpy() + self.blackbox_delays()['wmax']
         
         # store the steps
         self.__add_steps__(fs, ms, to)
@@ -742,6 +742,7 @@ class RunningAnalysis():
                     self.steps += [Step(fs, ms, to, ln)]
                 else:
                     proceed = False
+
 
 
     def __add_steps__(self, fs, ms ,to):
