@@ -624,13 +624,8 @@ class Vector(pd.DataFrame):
 
         # ensure all entered parameters are vectors
         assert Vector.match(A, B, C), "'A', 'B' and 'C' must be Vectors with the same index and columns."
-
-        # get the multiplier to be used for calculating the distance.
-        t = (A - C).dot(B - A) / ((B - A).module.values ** 2)
-
-        # get X
-        return A + (B - A) * t.values
-
+        return A * (B - C).dot(B - A).values - B * (A - C).dot(B - A).values
+        
 
     
     @property
