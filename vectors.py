@@ -1506,7 +1506,7 @@ class ReferenceFrame():
         assert isinstance(origin, dict), "'origin' must be a dict."
         
         # check each versor
-        assert len(versors) == len(origin), str(len(origin)) + " versors are reuqired."
+        assert len(versors) == len(origin), str(len(origin)) + " versors are required."
         dims = np.array([i for i in origin])
         V = []
         for versor in versors:
