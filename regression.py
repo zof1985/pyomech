@@ -262,7 +262,7 @@ class LinearRegression():
 class PolynomialRegression(LinearRegression):
 
 
-    def __init__(self, y, x, order=None, digits=5, fit_intercept=True):
+    def __init__(self, y, x, order=None, fit_intercept=True):
         """
         Perform the polynomial regression of y given x. The polynomial order can be specified via order, otherwise the
         order ensuring that all the extracted coefficients are not zero.
@@ -278,18 +278,19 @@ class PolynomialRegression(LinearRegression):
                             the order of the polynomial regression. If None, the order resulting in the highest 
                             Adjusted R-squared.
 
-            digits:         (int)
-                            the number of digits available for each coefficient.
-
             fit_intercept:  (bool)
                             Should the intercept be included in the model?
         """ 
 
         # store the entered parameters
-        self.y = np.array([y]).flatten()
-        self.x = np.array([x]).flatten()
+        self.y = np.atleast_2d(y)
+        self.x = np.atleat_2d(x)
+        if self.x.shape[1] > 1:
+            if self.x.shape[0] > 1:
+                raise ValueError("'x' must be a 1D array or a 2D array with 1 dimension.")
+            else:
+                self.x = self.x.T
         self.fit_intercept = fit_intercept
-        self.digits = digits
         
         # handle the case the order is not provided
         if order is None:
@@ -308,7 +309,7 @@ class PolynomialRegression(LinearRegression):
         elif order == 0:
             self.order = order
             X = np.tile(np.mean(y), len(y))
-            super(PolynomialRegression, self).__init__(self.y, X, self.digits, self.fit_intercept)
+            super(PolynomialRegression, self).__init__(self.y, X, self.fit_intercept)
 
         # fit the model with the given order
         else:
@@ -322,8 +323,8 @@ class PolynomialRegression(LinearRegression):
         """
         self.order = order
         X = np.atleast_2d([self.x ** i for i in np.arange(self.order) + 1]).T
-        super(PolynomialRegression, self).__init__(self.y, X, self.digits, self.fit_intercept)
-        self.x = X[:, 0].flatten()
+        super(PolynomialRegression, self).__init__(self.y, X, self.fit_intercept)
+        self.x = X[:, 0]
 
 
     
