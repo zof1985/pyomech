@@ -291,7 +291,6 @@ class RunningAnalysis():
             self.n = None
             self.fc = None
             self.fs = None
-            self.th = None
 
         # add the new source
         self.source = source
@@ -320,7 +319,6 @@ class RunningAnalysis():
         self.tw = None
         self.fc = None
         self.n = None
-        self.th = None
         self.fs = heel_right.sampling_frequency
 
         # FOOT-STRIKES
@@ -421,15 +419,7 @@ class RunningAnalysis():
 
             # obtain the minima in the vertical direction
             mns_y = find_peaks(-self.__scale__(toe['Y'].values.flatten()), height=-0.1, plot=False)
-            '''
-            import matplotlib.pyplot as pl
-            pl.plot(toe.index.to_numpy(), self.__scale__(toe['Z'].values.flatten()))
-            pl.plot(toe.index.to_numpy(), self.__scale__(toe['Y'].values.flatten()))
-            pl.plot(toe.index.to_numpy()[mns_z], self.__scale__(toe['Z'].values.flatten())[mns_z], 'go', label='mns_z')
-            pl.plot(toe.index.to_numpy()[mns_y], self.__scale__(toe['Y'].values.flatten())[mns_y], 'ro', label='mns_y')
-            pl.legend()
-            pl.show()
-            '''
+
             # for each minima in mns_z find the closest minima in mns_y.
             return [mns_y[np.argmin(abs(mns_y - i))] for i in mns_z]
 
@@ -461,7 +451,6 @@ class RunningAnalysis():
         self.tw = None
         self.fc = None
         self.n = None
-        self.th = None
         self.fs = force.sampling_frequency
 
         # get force first derivative
@@ -513,7 +502,6 @@ class RunningAnalysis():
         self.tw = None
         self.fc = None
         self.n = None
-        self.th = None
         self.fs = None
 
         # get the foot-strikes
@@ -651,7 +639,6 @@ class RunningAnalysis():
             """
             
             # get the peaks with amplitude above th
-            # pks = find_peaks(self.__scale__(sp), self.th, plot=False)
             pks = find_peaks(sp, np.min(sp) + (np.max(sp) - np.min(sp)) * 0.5, plot=False)
 
             # return the first peak or NaN
@@ -924,7 +911,6 @@ class RunningAnalysis():
         txt += "{:25s}".format("Time window (s):") + (str(self.tw) if self.tw is not None else "") + "\n"
         txt += "{:25s}".format("Filter order:") + (str(self.n) if self.n is not None else "") + "\n"
         txt += "{:25s}".format("Filter cut-off (Hz):") + (str(self.fc) if self.fc is not None else "") + "\n"
-        txt += "{:25s}".format("Amplitude threshold:") + (str(self.th) if self.th is not None else "") + "\n"
         txt += "{:25s}".format("Sampling frequency (Hz):") + (str(self.fs) if self.fs is not None else "")
         return txt
 
@@ -967,7 +953,6 @@ class RunningAnalysis():
         new.tw = self.tw
         new.n = self.n
         new.fc = self.fc
-        new.th = self.th
         new.fs = self.fs
         return new
 
@@ -1009,8 +994,8 @@ class RunningAnalysis():
         os.makedirs(lvlup(file), exist_ok=True)
 
         # store the parameters
-        params = pd.DataFrame({'source': self.source, 'tw': self.tw, 'n': self.n, 'fc': self.fc, 'fs': self.fs,
-                               'th': self.th}, index=[0])
+        params = pd.DataFrame({'source': self.source, 'tw': self.tw, 'n': self.n, 'fc': self.fc,
+                               'fs': self.fs}, index=[0])
         to_excel(file, params, '__params__')
         
         # store the steps
