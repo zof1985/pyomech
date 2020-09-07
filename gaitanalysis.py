@@ -294,6 +294,7 @@ class RunningAnalysis():
 
         # add the new source
         self.source = source
+  
         
 
     def __from_kinematics__(self, heel_right, toe_right, heel_left, toe_left, meta_right, meta_left):
@@ -615,22 +616,43 @@ class RunningAnalysis():
                 mn:     (int)
                         the location of the mid-stance in sample points
             """
+            """
             try:
                 # find the first flexion point (either a local maxima or minima)
                 pk = np.sort(np.append(find_peaks(sp, plot=False), find_peaks(-sp, plot=False)))[0]
 
                 # get the first point in the signal below th and after pk
-                # st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
-                st = pk
+                st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
             
             except Exception:
                 return np.nan
-
+            
             # get the next toe-off or the last point in the sp if to is not found
-            end = __get_to__(sp[st:])
-            end = (end + st) if not np.isnan(end) else (len(sp) - 1)
+            # end = __get_to__(sp[st:])
+            # end = (end + st) if not np.isnan(end) else (len(sp) - 1)
+            
+            # if mn corresponds to end return nan (the identification of the minima in the signal is not reliable)
+            # otherwise return mn
+            mn = np.argmin(sp[:end])
+            return np.nan if mn == end else mn
+            """
+            # find the first local minima
+            mn = find_peaks(-sp, height=-np.mean(sp), plot=False)
+            if len(mn) == 0: return np.nan
+            st = mn[0]
+            
+            # get the next toe-off or the last point in the sp if to is not found
+            # remember to keep only the peaks with minimum vertical difference from st of 0.1 km/h
+            pks = find_peaks(self.__scale__(sp[st:]), plot=False)
+            if len(pks) == 0: return np.nan
+            mh = np.mean(sp[st:][pks] - sp[st]) * 0.5
+            if len(pks) > 0: pks = pks[abs(sp[st:][pks] - sp[st]) >= mh]
 
-            # get the minimum value in sp within end
+            # check if relevant peaks are found
+            if len(pks) == 0: return np.nan
+            
+            # get the minimum value in sp within the toe-off
+            end = pks[0] + st
             mn = np.argmin(sp[:end])
             
             # if mn corresponds to end return nan (the identification of the minima in the signal is not reliable)
@@ -652,7 +674,8 @@ class RunningAnalysis():
             """
             
             # get the peaks with amplitude above th
-            pks = find_peaks(self.__scale__(sp), self.th, plot=False)
+            # pks = find_peaks(self.__scale__(sp), self.th, plot=False)
+            pks = find_peaks(sp, np.min(sp) + (np.max(sp) - np.min(sp)) * 0.5, plot=False)
 
             # return the first peak or NaN
             return pks[0] if len(pks) > 0 else np.nan
@@ -703,7 +726,7 @@ class RunningAnalysis():
                 
                 # ensure the signal starts from a toe-off
                 if len(self.steps) == 0:
-                    t0 = __get_to__(sf)
+                    t0 = find_peaks(self.__scale__(sf), 0.8, plot=False)[0]
                     tm = tm[t0:]
                     sp = sp[t0:]
                     sf = sf[t0:]

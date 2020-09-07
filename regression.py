@@ -143,10 +143,7 @@ class LinearRegression():
             XX = v
         else:
             if isinstance(v, np.ndarray):
-                if v.ndim < 2:
-                    XX = np.atleast_2d(v).T
-                else:
-                    XX = v
+                XX = pd.DataFrame(np.squeeze(v))
             elif v is None:
 
                 # try to get the shape from the other parameter
@@ -284,7 +281,7 @@ class PolynomialRegression(LinearRegression):
 
         # store the entered parameters
         self.y = np.atleast_2d(y)
-        self.x = np.atleat_2d(x)
+        self.x = np.atleast_2d(x)
         if self.x.shape[1] > 1:
             if self.x.shape[0] > 1:
                 raise ValueError("'x' must be a 1D array or a 2D array with 1 dimension.")
