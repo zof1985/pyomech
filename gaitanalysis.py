@@ -17,6 +17,7 @@ from bokeh.palettes import *
 from bokeh.io import *
 from .processing import *
 from .utils import *
+from .regression import *
 
 
 
@@ -532,7 +533,7 @@ class RunningAnalysis():
   
 
      
-    def __from_treadmill__(self, speed, tw=2, fc=10, n=2, th=0.8):
+    def __from_treadmill__(self, speed, tw=2, fc=10, n=2):
         """
         method extracting the gait events from treadmill data using the new2 approach.
 
@@ -548,10 +549,6 @@ class RunningAnalysis():
 
             n:      (int)
                     the order of the phase-corrected Butterworth low-pass filter.
-
-            th:     (float)
-                    a scalar representing the amplitude threshold for the detection of the toe-offs (it reflects a
-                    percentage of the signal amplitude).
         """
 
 
@@ -616,26 +613,6 @@ class RunningAnalysis():
                 mn:     (int)
                         the location of the mid-stance in sample points
             """
-            """
-            try:
-                # find the first flexion point (either a local maxima or minima)
-                pk = np.sort(np.append(find_peaks(sp, plot=False), find_peaks(-sp, plot=False)))[0]
-
-                # get the first point in the signal below th and after pk
-                st = np.argwhere(self.__scale__(sp)[pk:] < self.th).flatten()[0] + pk
-            
-            except Exception:
-                return np.nan
-            
-            # get the next toe-off or the last point in the sp if to is not found
-            # end = __get_to__(sp[st:])
-            # end = (end + st) if not np.isnan(end) else (len(sp) - 1)
-            
-            # if mn corresponds to end return nan (the identification of the minima in the signal is not reliable)
-            # otherwise return mn
-            mn = np.argmin(sp[:end])
-            return np.nan if mn == end else mn
-            """
             # find the first local minima
             mn = find_peaks(-sp, height=-np.mean(sp), plot=False)
             if len(mn) == 0: return np.nan
@@ -688,7 +665,6 @@ class RunningAnalysis():
         self.tw = tw                        # time-window
         self.n = n                          # filter order
         self.fc = fc                        # filter cut-off frequency
-        self.th = th                        # amplitude threshold (this is used to detect mid-stances and toe-offs)
         self.fs = speed.sampling_frequency  # the frequency of the signal
 
         # initialize the steps output
@@ -721,12 +697,22 @@ class RunningAnalysis():
                 # get the speed signal within the current buffer
                 sp = speed.values.flatten()[ix_buf]
 
-                # to speed-up the search calculate also a scaled and filtered copy of the speed signal
-                sf = butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+                # to speed-up the search calculates also a scaled and filtered copy of the speed signal
+                fl = butt_filt(sp, cutoffs=self.fc, order=self.n, sampling_frequency=self.fs, plot=False)
+
+                # detrend the signal using a 2nd order polynomial
+                # XX = np.vstack([np.ones(1, tm.shape[0]), np.atleast_2d(tm), np.atleast_2d(tm)]).T
+                # B = np.linalg.inv(XX.T.dot(XX)).dot(XX.T).dot(np.atleast_2d(sf).T)
+                # trend = XX.dot(B[1:]) + B[0]
+                # sf = sf - trend.flatten()
+                trend = PolynomialRegression(fl, tm, order=2).predict(tm).values.flatten()
+                sp = sp - trend
+                sf = fl - trend
                 
                 # ensure the signal starts from a toe-off
                 if len(self.steps) == 0:
-                    t0 = find_peaks(self.__scale__(sf), 0.8, plot=False)[0]
+                    ff = butt_filt(sp, cutoffs=4, order=self.n, sampling_frequency=self.fs, plot=False)
+                    t0 = find_peaks(self.__scale__(ff), plot=False)[0]
                     tm = tm[t0:]
                     sp = sp[t0:]
                     sf = sf[t0:]
