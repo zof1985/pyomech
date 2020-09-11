@@ -173,7 +173,7 @@ def digitize(x, rule="fd"):
 
 
 
-def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=False):
+def mean_filter(y, n=1, offset=0, pad_style="mirror", plot=False):
     """
     apply a moving average filter with the given order to y. The only padding style currently supported is "mirror"
     which specularly extends the signal at each end to the required amount of samples necessary to preserve the signal
@@ -232,7 +232,7 @@ def moving_average_filter(y, n=1, offset=0, pad_style="mirror", plot=False):
 
         # assuming that left_pad and right_pad equal 2 and 3 respectively, we want:
         #           y = [ABCDEFGHI]     -->       y_padded = [CB] [ABCDEFGHI] [HGF]
-        y_pad = pad_mirror(y, before=left_pad, after=right_pad, plot=False)
+        y_pad = pad(y, before=left_pad, after=right_pad, type='mirror', plot=False)
 
     # to reduce the computation time rather than calculating the mean value corresponding to each sample of the output
     # signal, we calculate the filter from the cumulative sum. This greatly reduces the number of operations, thus the
