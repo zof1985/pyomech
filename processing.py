@@ -905,8 +905,16 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
                         method.
 
     Output:
-        a numpy array with the location of the crossing points.
-        if plot is True, also a bokeh figure containing a graphical visualization of the outcomes.
+        c:              (ndarray)
+                        the samples corresponding to the crossings.
+        
+        s:              (ndarray)
+                        the sign of the crossings. Positive sign means crossings where the signal moves from
+                        values lower than "value" to values higher than "value". Negative sign indicate the
+                        opposite trend.
+        
+        p:              (bokeh.Figure, optional)
+                        if plot is True, also a bokeh figure containing a graphical visualization of the outcomes.
     """
 
     # get the sign of the signal without the offset
@@ -942,7 +950,7 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
 
     # return the crossings
     if not plot:
-        return xcr
+        return xcr, sn[cr]
     
     # generate the signal-domain figure
     p = figure(width=fig_size, height=fig_size, title="Crossings", toolbar_location="right")
@@ -972,7 +980,7 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
     p.ygrid.grid_line_dash=[5, 5]
        
     # return all
-    return xcr, p
+    return xcr, sn[cr], p
 
 
 
