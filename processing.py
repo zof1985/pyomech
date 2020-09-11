@@ -950,7 +950,7 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
 
     # return the crossings
     if not plot:
-        return xcr, sn[cr]
+        return xcr, -sn[cr]
     
     # generate the signal-domain figure
     p = figure(width=fig_size, height=fig_size, title="Crossings", toolbar_location="right")
@@ -980,7 +980,7 @@ def crossings(y, value=0., x=None, interpolate=False, plot=False):
     p.ygrid.grid_line_dash=[5, 5]
        
     # return all
-    return xcr, sn[cr], p
+    return xcr, -sn[cr], p
 
 
 
