@@ -199,7 +199,7 @@ class Vector(pd.DataFrame):
         complete = self.copy()
 
         # get the missing values
-        miss_idx = self.index[self.isna().any(1)].to_numpy()
+        miss_idx = self.loc[self.isna().any(1).values].index.to_numpy()
 
         # replace missing data
         if len(miss_idx) > 0:
@@ -246,12 +246,12 @@ class Vector(pd.DataFrame):
                     x = pd.concat([x, v_pdf], axis=1, ignore_index=False)
 
                 # exclude the features containing NaNs in the miss_idx data range
-                valid_features = x.columns[~(x.loc[miss_idx].isna().any(0))]
+                valid_features = x.columns[~(x.loc[miss_idx].isna().any(0)).values.flatten()]
                 x = x[valid_features]
 
                 # exclude the sets containing missing data from the training sets,
                 # then get max_tr_data unique samples at random
-                valid_sets = x.index[(~x.isna().any(1) & ~x.index.isin(miss_idx))].to_numpy()
+                valid_sets = x.index[(~x.isna().any(1).values.flatten() & ~x.index.isin(miss_idx).flatten())].to_numpy()
                 np.random.seed()
                 unique_sets = valid_sets[np.unique(x.loc[valid_sets].values, axis=0, return_index=True)[1]]
                 training_index = np.sort(np.random.permutation(unique_sets)[:max_tr_data])
@@ -422,6 +422,9 @@ class Vector(pd.DataFrame):
             # merge the output
             cutoffs[v] = pd.Series(cut)
             SSEs = pd.concat([SSEs, sse], axis=1, ignore_index=False)
+        
+        # rename the columns
+        SSEs.columns = self.columns
 
         # return the data
         if not plot:
@@ -489,7 +492,7 @@ class Vector(pd.DataFrame):
         plots = {}
 
         # handle the cutoffs
-        if cutoffs.__class__.__name__[:5] == "float" or cutoffs.__class__.__name__[:3] == "int":
+        if not isinstance(cutoffs, dict):
             cutoffs = {i: cutoffs for i in self.columns}
 
         # apply the pyomech.processing.winter_residuals method to each dimension of the Vector
