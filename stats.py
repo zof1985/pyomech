@@ -1416,6 +1416,7 @@ class AnovaEffect():
         # outcomes
         if not_required:
             ln = np.tile(None, 5)
+            gg_eps = None
         else:
             gg_eps = self.epsilon_GG()
             gg_f = F(self.SSn, self.DFn, self.SSd, self.DFd, gg_eps, alpha, two_tailed)
@@ -1612,7 +1613,9 @@ class Anova(LinearRegression):
         # check the variables
         assert isinstance(source, pd.DataFrame), "source must be a pandas.DataFrame instance."
         assert isinstance(iv, list), "'iv' must be a list instance."
-        assert isinstance(dv, list), "'dv' must be a list instance."
+        if isinstance(dv, str):
+            dv = [dv]
+        assert isinstance(dv, list), "'dv' must be a list or str instance."
         source_missing = "{} not found in 'source'."
         for i in iv + dv:
             assert np.any([i == j for j in source]), source_missing.format(i)
