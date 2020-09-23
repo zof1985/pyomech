@@ -890,7 +890,7 @@ class PermutationF(Test):
 
         # get the F value and its degrees of freedom
         f = MS_num / MS_den
-        df = (DF_num * eps, DF_den * eps)
+        df = (DF_num, DF_den)
 
         # check the pdf
         txt = "'pdf' length must be {} or more. {} was provided.".format(1 / alpha, len(pdf))
@@ -2100,6 +2100,8 @@ class Anova(LinearRegression):
                 dfN += pd.DataFrame(pd.DataFrame(H[ii]).sum(1), columns=["DFc"])
                 dfD += pd.DataFrame(pd.DataFrame(H[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
             dfc = (dfN ** 2 / dfD).T
+        else:
+            dfc = pd.DataFrame()
 
         # get t-crit, p-values and confidence intervals
         tc = em.copy()
@@ -2710,6 +2712,8 @@ class Anova1D(LinearRegression):
                 dfN += pd.DataFrame(pd.DataFrame(H[ii]).sum(1), columns=["DFc"])
                 dfD += pd.DataFrame(pd.DataFrame(H[ii]).sum(1) ** 2 / dfe, columns=["DFc"])
             dfc = (dfN ** 2 / dfD).T
+        else:
+            dfc = pd.DataFrame()
 
         # get t-crit, p-values and confidence intervals
         tc = em.copy()
