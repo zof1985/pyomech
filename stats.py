@@ -1791,7 +1791,7 @@ class Anova(LinearRegression):
                 ], axis=1)
 
         # parallelize computation
-        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects])
+        R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
         return pd.concat(R, axis=0).dropna(axis=1, how='all').apply(self.__rnd__, decimals=digits)
 
 
