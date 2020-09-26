@@ -774,11 +774,10 @@ class T(Test):
         t_crit = st.t.isf(alpha * (0.5 if two_tailed else 1), df)
 
         # adjust the test value in case of a two-tailed test
-        if two_tailed:
-            t = abs(t)
+        tt = abs(t) if two_tailed else t
 
         # get the p value
-        v = st.t.sf(t, df)
+        v = st.t.sf(tt, df)
         v = np.min([1, 2 * v]) if two_tailed else v
 
         # create the test
