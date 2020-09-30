@@ -318,7 +318,7 @@ class Vector(pd.DataFrame):
             plots[i].yaxis.axis_label = self.dim_unit if i == 0 else ""
 
             # plot the original data
-            complete_idx = self.index[~self.isna().any(1)].to_numpy()
+            complete_idx = self.index[~self.isna().any(1).values.flatten()].to_numpy()
             original = self.loc[complete_idx]
             raw = plots[i].scatter(original.index.to_numpy(), original[v].values.flatten(), size=4, color="navy",
                                    alpha=0.5, marker="circle")
