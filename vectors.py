@@ -1385,7 +1385,7 @@ class VectorDict(dict):
 
         # something went wrong so close file
         except Exception:
-            pass
+            lines = []
 
         # close the file
         finally:
