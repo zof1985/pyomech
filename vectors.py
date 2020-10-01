@@ -282,7 +282,7 @@ class Vector(pd.DataFrame):
                     if replacing_policy[v] is None:
                         
                         # get the list of complete datasets
-                        x_old = self.index[~self.isna().any(1)].to_numpy()
+                        x_old = self.index[~self.isna().any(1).values.flatten()].to_numpy()
                         x_new = complete.index.to_numpy()
                         y_old = complete.loc[x_old, v].values.flatten()
                         y_new = cubic_spline_interpolation(y=y_old, x_old=x_old, x_new=x_new)
