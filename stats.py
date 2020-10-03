@@ -1037,9 +1037,7 @@ class PermutationTest(Test):
             warnings.warn(txt)
 
         # build the pdf
-        # pdf = np.squeeze([self.__ptest__(source, data, groups, test, test_kwargs) for i in np.arange(k)])  # debug
-        pdf = np.squeeze(jl.Parallel(n_jobs=-1, prefer="threads")
-                         (jl.delayed(self.__ptest__)(source, data, groups, test, test_kwargs) for i in np.arange(k)))
+        pdf = np.squeeze([self.__ptest__(source, data, groups, test, test_kwargs) for i in np.arange(k)])  # debug
 
         # get the test output and standardize test output
         t0 = test(source, data, groups, **test_kwargs)
@@ -1768,7 +1766,7 @@ class Anova(LinearRegression):
 
         # get the total error SS to calculate the generalized effect sizes
         SSe = np.sum([self.effects[e].SSd(self.effects[e].Y) for e in self.effects])
-        
+
         # parallelizing function
         def pfun(e):
             """
@@ -1777,7 +1775,7 @@ class Anova(LinearRegression):
             Input:
                 e:  (str)
                     the name of an effect
-            
+
             Output:
                 df: (pandas.DataFrame)
                     one row dataframe containing the anova table output of the effect "e".
@@ -1820,7 +1818,7 @@ class Anova(LinearRegression):
             Input:
                 e:  (str)
                     the name of an effect
-            
+
             Output:
                 df: (pandas.DataFrame)
                     one row dataframe containing the anova table output of the effect "e".
@@ -1897,7 +1895,7 @@ class Anova(LinearRegression):
             Input:
                 e:  (str)
                     the name of an effect
-            
+
             Output:
                 df: (pandas.DataFrame)
                     one row dataframe containing the anova table output of the effect "e".
@@ -1921,7 +1919,7 @@ class Anova(LinearRegression):
 
                         # add the contrast
                         M = pd.concat([M, cmj], axis=1)
-            
+
             # get the emmeans but keep only the columns of insterest
             emm_cols = ["Estimate", "Standard error",
                         "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
@@ -1982,7 +1980,7 @@ class Anova(LinearRegression):
             M:  (pandas.DataFrame)
                 a dataframe containing the emmeans for the effect.
         """
-        
+
 
         # internal methods
         def get_MM(Y):
@@ -2047,7 +2045,7 @@ class Anova(LinearRegression):
         L = pd.DataFrame(np.zeros((len(I), len(G))), index=I, columns=G)
         P = model(self.source[E.label.split(":")], E.label, include_intercept=True)
         L.loc[P.index, P.columns] = P.values
-        
+
         # adjust L for the contrasts
         M = C.T.dot(L) if C is not None else L
 
@@ -2380,7 +2378,7 @@ class Anova1D(LinearRegression):
 
         # get the total error SS to calculate the generalized effect sizes
         SSe = np.sum([self.effects[e].SSd(self.effects[e].Y) for e in self.effects])
-        
+
         # parallelizing function
         def pfun(e):
             """
@@ -2389,7 +2387,7 @@ class Anova1D(LinearRegression):
             Input:
                 e:  (str)
                     the name of an effect
-            
+
             Output:
                 df: (pandas.DataFrame)
                     one row dataframe containing the anova table output of the effect "e".
@@ -2432,7 +2430,7 @@ class Anova1D(LinearRegression):
             Input:
                 e:  (str)
                     the name of an effect
-            
+
             Output:
                 df: (pandas.DataFrame)
                     one row dataframe containing the anova table output of the effect "e".
@@ -2509,7 +2507,7 @@ class Anova1D(LinearRegression):
             Input:
                 e:  (str)
                     the name of an effect
-            
+
             Output:
                 df: (pandas.DataFrame)
                     one row dataframe containing the anova table output of the effect "e".
@@ -2533,7 +2531,7 @@ class Anova1D(LinearRegression):
 
                         # add the contrast
                         M = pd.concat([M, cmj], axis=1)
-            
+
             # get the emmeans but keep only the columns of insterest
             emm_cols = ["Estimate", "Standard error",
                         "{:0.0f}% C.I. (inf)".format(100 * (1 - self.alpha)),
@@ -2594,7 +2592,7 @@ class Anova1D(LinearRegression):
             M:  (pandas.DataFrame)
                 a dataframe containing the emmeans for the effect.
         """
-        
+
 
         # internal methods
         def get_MM(Y):
@@ -2659,7 +2657,7 @@ class Anova1D(LinearRegression):
         L = pd.DataFrame(np.zeros((len(I), len(G))), index=I, columns=G)
         P = model(self.source[E.label.split(":")], E.label, include_intercept=True)
         L.loc[P.index, P.columns] = P.values
-        
+
         # adjust L for the contrasts
         M = C.T.dot(L) if C is not None else L
 
