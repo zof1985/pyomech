@@ -170,7 +170,7 @@ class Vector(pd.DataFrame):
                 all the training data are used. Otherwise, the specified numebr is randomly sampled from the available
                 pool.
             replacing_policy: (dict or None)
-                How to replace the NaNs data. If a dict is provided, the NaNs contained in the dimensions of the vctor
+                How to replace the NaNs data. If a dict is provided, the NaNs contained in the dimensions of the vector
                 corresponding to any of the key contained in the provided dict will be replaced by the value
                 associated to that key. That value can be a float or an int object. If None is provided or a key is
                 not given for one or more dimensions of the vector, SVR is used to provide the NaNs replacement.
