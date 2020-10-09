@@ -751,7 +751,7 @@ class T(Test):
                 sb = np.var(df_data[1])
 
                 # WELCH TEST (in case of unequal variance)
-                B = BrownForsythe(source, data, groups, alpha, two_tailed)
+                B = BrownForsythe(source, [data], [groups], alpha, two_tailed)
                 if B.p < alpha:
                     if verbose:
                         warnings.warn("groups have unequal variance. Welch's T test is used.")
@@ -983,7 +983,7 @@ class BrownForsythe(F):
         SS_den = MS_den * DF_den
 
         # store the outcomes
-        super(BrownForsythe, self).__init__(SS_num, DF_num, SS_den, DF_den, eps=1, alpha=0.05,
+        super(BrownForsythe, self).__init__(SS_num, DF_num, SS_den, DF_den, eps=1, alpha=alpha,
                                             two_tailed=two_tailed)
         self.name = "Brown-Forsythe"
 
