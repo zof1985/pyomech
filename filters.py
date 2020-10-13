@@ -3,6 +3,7 @@
 
 
 
+from _typeshed import NoneType
 import numpy as np
 import pandas as pd
 
@@ -513,7 +514,7 @@ class KalmanFilterOld():
                     True means that "what" can be None. False, otherwise
         """
         if what is not None:
-            txt = name + "{} must be a {}x{} array".format(name, rows, cols)
+            txt = "{} must be a {}x{} array".format(name, rows, cols)
             assert what.shape[0] == rows and what.shape[1] == cols, txt
         else:
-            assert none, "{} cannot be None".format(name)
+            assert isinstance(what, NoneType), "{} cannot be None".format(name)
