@@ -460,7 +460,7 @@ class RunningAnalysis():
         pks_dv = find_peaks(self.__scale__(d1['Y'].values.flatten()), plot=False)
 
         # get the force vertical crossings at the 5% of the force peak
-        crs_fv = crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)
+        crs_fv = crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)[0]
 
         # get the closer crossing point to each peak
         fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_dv])
