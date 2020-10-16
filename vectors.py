@@ -1564,8 +1564,7 @@ class ReferenceFrame():
 
         # rotate vector
         V = vector - O
-        for t in V.index.to_numpy():
-            V.loc[t] = V.loc[t].values.flatten().dot(self._to_local)
+        V.loc[V.index] = V.values.dot(self._to_local)
         return V
     
 
@@ -1588,6 +1587,5 @@ class ReferenceFrame():
 
         # rotate vector
         V = vector.copy()
-        for t in V.index.to_numpy():
-            V.loc[t] = V.loc[t].values.flatten().dot(self._to_global)
+        V.loc[V.index] = V.values.dot(self._to_global)
         return V + O
