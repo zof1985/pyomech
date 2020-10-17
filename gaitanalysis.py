@@ -454,10 +454,10 @@ class RunningAnalysis():
         self.fs = force.sampling_frequency
 
         # get force first derivative
-        d1 = force.der1_winter().butt_filt(cutoffs=6, order=4)[0]
+        d1 = force.der1_winter().butt_filt(cutoffs=4, order=4)[0]
         
         # get the peaks in the first derivative and in force with height above 0.66
-        pks_dv = find_peaks(self.__scale__(d1['Y'].values.flatten()), plot=False)
+        pks_dv = find_peaks(self.__scale__(d1['Y'].values.flatten()), 0.5, plot=False)[1:]
 
         # get the force vertical crossings at the 5% of the force peak
         crs_fv = crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)[0]
