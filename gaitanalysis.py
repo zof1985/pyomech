@@ -454,16 +454,24 @@ class RunningAnalysis():
         self.fs = force.sampling_frequency
 
         # get force first derivative
-        d1 = force.der1_winter().butt_filt(cutoffs=4, order=4)[0]
-        
+        # d1 = force.der1_winter().butt_filt(cutoffs=6, order=4, plot=False)
+
         # get the peaks in the first derivative and in force with height above 0.66
-        pks_dv = find_peaks(self.__scale__(d1['Y'].values.flatten()), 0.5, plot=False)[1:]
+        # pks_dv = find_peaks(self.__scale__(d1['Y'].values.flatten()), 0.5, plot=False)[1:]
+
+        # get the peaks in F
+        P, F = psd(force['Y'].values.flatten() - np.mean(force['Y'].values.flatten()), force.sampling_frequency)
+        Q = F[np.argmax(P)]
+        F = force.butt_filt(cutoffs=Q, order=4, plot=False)['Y'].values.flatten()
+        pks_fv = find_peaks(F, plot=False)[1:]
 
         # get the force vertical crossings at the 5% of the force peak
         crs_fv = crossings(self.__scale__(force['Y'].values.flatten()), 0.15, plot=False)[0]
 
         # get the closer crossing point to each peak
-        fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_dv])
+        # fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_dv])
+        # fs = force.index.to_numpy()[fs_x]
+        fs_x = np.unique([crs_fv[np.argmin(abs(crs_fv - i))] for i in pks_fv])[:-1]
         fs = force.index.to_numpy()[fs_x]
 
         # get the first point after a foot-strike in crs_fv
