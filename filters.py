@@ -4,6 +4,7 @@
 
 
 import numpy as np
+import pandas as pd
 
 
 
@@ -12,6 +13,228 @@ import numpy as np
 
 
 class KalmanFilter():
+    
+    
+    def __init__(self, X, P, M, estFUN, R=None, **kwargs):
+        """
+        Initialize the filter. The general Kalman filtering procedure is a 2 steps approach as
+        described below:  
+
+            Prediction: Provide a statistical estimate of where the next measure should be.
+        
+            Update:     Compare the predicted state with the effective measure and adjust the
+                        filter gain.
+
+        Input:
+
+            X:      (Nx1 array)
+                    the initial state vector provided as a column vector with length N.
+            
+            P:      (NxN array)
+                    the initial covariance matrix corresponding to the state X.
+
+            M:      (JxN array)
+                    a matrix used to convert the "state space" to the "measurement space".
+                    This function must accept a column vector of dimension N and a series of
+                    key_labelled parameters. It must return a column vector of dimension J.
+            
+            R:      (JxJ array or None)
+                    a column vector defining the noise to be added to the new measurement
+                    (e.g. instrumental error) during the calculation of the filter gain.
+                    It might be None. In this case it is inizialized to be an array of zeros.
+                    
+            estFUN: (function)
+                    a function having form "function(X, P, **kwargs)". This function must
+                    convert the input X (the state vector) and P (its covariance matrix) to
+                    their estimates at the next sample time.
+                    This function must accept a column vector of dimension N, an NxN matrix
+                    and a series of key_labelled parameters. It then must return a column
+                    vector of dimension N, an NxN matrix.
+        
+        Action of the filter:
+
+            The filter contains 2 main functions: "filter" and "filter_update". Their action is
+            the following:
+
+            1)  The filter uses the provided "estimate" function to predict the next state:
+
+                                    Xest, Pest = estFUN(X, P, **kwargs)
+                
+            2)  Next, the "innovation" phase is obtained measuring the difference between the
+                estimated new state (Xest, Pest) and a new measurement (Z):
+
+                                             Y = Z - M x Xest
+                                             S = M x Pest x M' + R
+                
+            3)  Afterwards, the "update" phase adjusts the filter gain and corrects the former
+                estimate and covariance.
+
+                                             K = Pest x M' x (S ** -1)
+                                          Xnew = Xest + K x Y
+                                          Pnew = (I - K x M) x Pest
+                
+            4)  If the "filter_update" function was called, the updated state and covariance are
+                stored as new filter state and covariance values.
+            
+                                            X = Xnew
+                                            P = Pnew
+            
+            5)  The filter returns the filtered measure.
+
+                                         Zfil = M x Xnew        
+        """
+
+        # get X, N and I
+        txt = "'X' must be a (N, 1) numpy.ndarray or pandas.DataFrame instance with 1 column."
+        assert isinstance(X, (np.ndarray, pd.DataFrame)) and X.shape[1] == 1, txt
+        self.N = X.shape[0]
+        self.X = X
+        self.I = np.eye(self.N)
+
+        # get P
+        txt = "'P' must be a (N, N) numpy.ndarray or pandas.DataFrame instance with N columns"
+        txt += " and rows."
+        assert isinstance(P, (np.ndarray, pd.DataFrame)), txt
+        assert np.all([i == self.N for i in P.shape]), txt
+        self.P = P
+
+        # get M and J
+        txt = "'M' must be a (J, N) numpy.ndarray or pandas.DataFrame instance with N columns"
+        txt += " and J rows."
+        assert isinstance(M, (np.ndarray, pd.DataFrame)) and M.shape[1] == self.N, txt
+        self.J = M.shape[0]
+        self.M = M
+        
+        # get R
+        if R is not None:
+            txt = "'R' must be a (J, J) numpy.ndarray or pandas.DataFrame instance with J columns"
+            txt += " and rows."
+            assert isinstance(R, (np.ndarray, pd.DataFrame)), txt
+            assert np.all([i == self.J for i in R.shape]), txt
+        else:
+            R = np.zeros((self.J, self.J))
+        self.R = R
+
+        # get the estFUN and kwargs
+        self.estimate = estFUN
+        self.est_kwargs = kwargs
+    
+
+    def filter(self, Z, R=None):
+        """
+        filter the new measurement (Z) according to the provided measurment noise (R) without
+        updating the current filter state.
+
+        Input:
+
+            Z:  (Jx1 array)
+                a new measurement.
+            
+            R:  (JxJ array or None)
+                a new measurement error matrix. If None, the actual store R is used.
+
+        Output:
+
+            Y:  (Jx1 array)
+                the residuals between the new measurement and the predicted state.
+            
+            S:  (JxJ array)
+                the innovated covariance of the measurement.
+        """
+
+        # return the filtered signal
+        return self._filt(Z, R)[0]
+
+    
+    def filter_update(self, Z, R=None):
+        """
+        filter the new measurement (Z) according to the provided measurment noise (R) and
+        update the current filter state.
+
+        Input:
+
+            Z:  (Jx1 array)
+                a new measurement.
+            
+            R:  (JxJ array or None)
+                a new measurement error matrix. If None, the actual store R is used.
+
+        Output:
+
+            Y:  (Jx1 array)
+                the residuals between the new measurement and the predicted state.
+            
+            S:  (JxJ array)
+                the innovated covariance of the measurement.
+        """
+
+        # get the filtered data
+        Zfil, Xnew, Pnew = self._filt(Z, R)
+
+        # update the state ofthe filter
+        self.Xnew = Xnew
+        self.Pnew = Pnew
+
+        # return the filtered measure
+        return Zfil
+
+
+    def _filt(self, Z, R=None):
+        """
+        Internal function that performs all the steps.
+
+        Input:
+
+            Z:      (Jx1 array)
+                    a new measurement.
+            
+            R:      (JxJ array or None)
+                    a new measurement error matrix. If None, the actual store R is used.
+
+        Output:
+
+            Zfil:   (Jx1 array)
+                    the filtered signal
+            
+            Xnew:   (Nx1 array)
+                    the updated state vector.
+            
+            Pnew:   (NxN array)
+                    the updated covariance matrix.
+        """
+        
+        # check the entries
+        txt = "'Z' must be a (J, 1) numpy.ndarray or pandas.DataFrame instance with 1 column"
+        txt += " and J rows."
+        assert isinstance(Z, (np.ndarray, pd.DataFrame)), txt
+        assert Z.shape[1] == 1 and Z.shape[0] == self.J, txt
+        if R is not None:
+            txt = "'R' must be a (J, J) numpy.ndarray or pandas.DataFrame instance with J columns"
+            txt += " and rows."
+            assert isinstance(R, (np.ndarray, pd.DataFrame)), txt
+            assert np.all([i == self.J for i in R.shape]), txt
+
+        # get the estimates
+        Xest, Pest = self.estimate(self.X, self.P, **self.est_kwargs)
+        
+        # innovation phase
+        Y = Z - self.M.dot(Xest)
+        S = self.M.dot(Pest).dot(self.M.T) + R
+
+        # get the Kalman gain
+        K = Pest.dot(self.M.T).dot(np.linalg.inv(S))
+
+        # update
+        Xnew = Xest + K.dot(Y)
+        Pnew = (self.I - K.dot(self.M)).dot(Pest)
+
+        # finalize
+        Znew = self.M.dot(Xnew)
+        return Znew, Xnew, Pnew
+
+
+
+class KalmanFilterOld():
     
     
     def __init__(self, X, P, F=None, U=None, B=None, Z=None, H=None, Q=None, R=None):
