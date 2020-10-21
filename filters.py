@@ -3,9 +3,11 @@
 
 
 
-from _typeshed import NoneType
 import numpy as np
 import pandas as pd
+
+
+eps = np.finfo(float).eps
 
 
 
@@ -173,8 +175,8 @@ class KalmanFilter():
         Zfil, Xnew, Pnew = self._filt(Z, R)
 
         # update the state ofthe filter
-        self.Xnew = Xnew
-        self.Pnew = Pnew
+        self.X = Xnew
+        self.P = Pnew
 
         # return the filtered measure
         return Zfil
@@ -214,20 +216,26 @@ class KalmanFilter():
             txt += " and rows."
             assert isinstance(R, (np.ndarray, pd.DataFrame)), txt
             assert np.all([i == self.J for i in R.shape]), txt
+            self.R = R
 
         # get the estimates
         Xest, Pest = self.estimate(self.X, self.P, **self.est_kwargs)
-        
+        Xest[np.argwhere(abs(Xest) < eps)] = 0.
+        Pest[np.argwhere(abs(Pest) < eps)] = 0.
+                
         # innovation phase
         Y = Z - self.M.dot(Xest)
-        S = self.M.dot(Pest).dot(self.M.T) + R
+        S = self.M.dot(Pest).dot(self.M.T) + self.R
+        S[np.argwhere(abs(S) < eps)] = 0.
 
         # get the Kalman gain
-        K = Pest.dot(self.M.T).dot(np.linalg.inv(S))
+        K = Pest.dot(self.M.T).dot(np.linalg.pinv(S))
+        K[np.argwhere(abs(K) < eps)] = 0.
 
         # update
         Xnew = Xest + K.dot(Y)
         Pnew = (self.I - K.dot(self.M)).dot(Pest)
+        Pnew[np.argwhere(abs(Pnew) < eps)] = 0.
 
         # finalize
         Znew = self.M.dot(Xnew)
