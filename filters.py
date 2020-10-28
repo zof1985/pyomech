@@ -5,20 +5,286 @@
 
 import numpy as np
 import pandas as pd
+import pyomech.vectors as pv
+import matplotlib.pyplot as pl
 
 
-eps = np.finfo(float).eps
 
+########    METHODS    ########
+
+
+
+def rk4(t0, y0, dt, fun, **kwargs):
+    """
+    Fourth order Runge-Kutta integrator for the Ordinary Differential Equation
+    based on discrete data. This method is based on the integration of the function:
+
+                       dy
+            f(t, y) = ----
+                       dx
+
+    with y0 = y(t0)
+
+    Input:
+            
+        t0:     (float)
+                the time zero of the integration.
+            
+        y0:     (float)
+                the starting value.
+
+        dt:     (float)
+                the time step from t0.
+
+        fun:    (function)
+                the function being the first derivative of y over t.
+
+        kwargs: (objects)
+                additional data passed to f.
+    
+    Output:
+
+        y:      (1D array)
+                the integrated signal over t.
+        """
+    
+
+    def _Kn(k, fun, dt, y, t, **kwargs):
+        """
+        get the n-th K value for finding the solution.
+
+        Input:
+
+            k:      (int)
+                    the actual K-th.
+
+            fun:    (function)
+                    the function returing the first derivative of y.
+                
+            dt:      (float)
+                    the step size.
+                
+            y:      (float)
+                    the actual y value.
+
+            t:      (float)
+                    the t value.
+
+            kwargs: (objects)
+                    parameters passed to f.
+            
+        Output:
+
+            y1:     (float)
+                    the resulting Y value.
+        """
+
+        if k == 1:
+            return fun(t, y, **kwargs)
+        elif k == 4:
+            return fun(t + dt, y + _Kn(k - 1, fun, dt, y, t, **kwargs), **kwargs)
+        else:
+            return fun(t + dt * 0.5, y + 0.5 * _Kn(k - 1, fun, dt, y, t, **kwargs), **kwargs)
+    
+
+    # perform the integration
+    y = y0
+    for i in range(4):
+        y += (2 if i > 0 or i < 3 else 1) / 6 * dt * _Kn(i + 1, fun, dt, y0, t0, **kwargs)
+    return y
+    
 
 
 ########    CLASSES    ########
 
 
 
+class IMU():
+
+
+    def __init__(self, **kwargs):
+        """
+        Inertial Measurement Unit class object.
+
+        Input:
+
+            accelerometer:      (pyomech.Vector)
+                                accelerometer data.
+            
+            gyroscope:          (pyomech.Vector)
+                                gyroscope data.
+            
+            calibration_acc:    (pyomech.Vector)
+                                the data corresponding to the calibration signal for accelerations.
+            
+            calibration_gyr:    (pyomech.Vector)
+                                the data corresponding to the calibration signal for angular
+                                velocities.
+        """
+        
+        # check the entries
+        txt = "{} must be a pyomech.Vector instance."
+        for k in kwargs:
+            assert isinstance(kwargs[k], pv.Vector), "{} must be a pyomech.Vector instance.".format(k)
+            setattr(self, k, kwargs[k])
+            
+
+    def integrateTime(self, V, S, dim_unit, type):
+        """
+        generate a Kalman filter and use it to obtain integrated data.
+
+        Input:
+
+            V:  (pyomech.Vector)
+                the vector containing the data to be integrated.
+            
+            S:  (pyomech.Vector)
+                the vector containing the static data used to extract sensor/activity
+                measurement noise.
+        
+        Output:
+
+            X:  (pyomech.Vector)
+                A vector with the same dimensions of V integrated over time.
+        """
+
+        # get the initial state
+        X = np.zeros((V.shape[1], 1))
+
+        # get the measurement to state matrix
+        B = np.eye(V.shape[1]) / V.sampling_frequency
+
+        # get the state to measurement
+        H = np.eye(V.shape[1])
+
+        # initial state variance
+        P = S.cov().values
+
+        # matrix used to estimate the new state.
+        F = np.eye(V.shape[1])
+
+        # process noise variance
+        Q = np.copy(P)
+        
+        # get the measurement noise
+        U = S.var().values
+        R = np.copy(P)
+
+        # use the filter to process the data
+        KF = KalmanFilter(X, P, H, F, B, U, Q, R)
+        K = zip(V.index.to_numpy()[:-1], V.index.to_numpy()[1:])
+        Z = np.vstack([KF.filter_update(V.loc[v].values - V.loc[i].values).T for i, v in K])
+        
+        # get the data
+        return pv.Vector(Z, columns=V.columns, index=V.index[:-1], dim_unit=dim_unit,
+                         time_unit=V.time_unit, type=type)
+
+
+    def doubleIntegrateTime(self, V, S, dim_unit, type):
+        """
+        generate a Kalman filter and use it to obtain double integrated data over time.
+
+        Input:
+
+            V:  (pyomech.Vector)
+                the vector containing the data to be integrated.
+            
+            S:  (pyomech.Vector)
+                the vector containing the static data used to extract sensor/activity
+                measurement noise.
+        
+        Output:
+
+            X:  (pyomech.Vector)
+                A vector with the same dimensions of V integrated over time.
+        """
+
+        # get dt
+        dt = 1 /  V.sampling_frequency
+
+        # get the initial state
+        X = np.zeros((V.shape[1] * 2, 1))
+
+        # get the measurement to state matrix
+        B = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(V.shape[1])]
+            B += [L]
+            L = [0 for j in np.arange(V.shape[1])]
+            L[i] = dt
+            B += [L]
+        B = np.atleast_2d(B)
+        
+        # get the state to measurement
+        H = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(V.shape[1] * 2)]
+            L[i * 2 + 1] = 1
+            H += [L]
+        H = np.atleast_2d(H)
+
+        # matrix used to estimate the new state.
+        F = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(V.shape[1] * 2)]
+            L[2 * i] = 1
+            L[2 * i + 1] = dt
+            F += [L]
+            L = [1 if j == (i * 2 + 1) else 0 for j in np.arange(V.shape[1] * 2)]
+            F += [L]
+        F = np.atleast_2d(F)
+
+        # initial state variance
+        P = H.T.dot(S.cov().values).dot(H)
+
+        # process noise variance
+        Q = np.copy(P)
+        
+        # get the measurement noise
+        U = S.var().values
+        R = S.cov().values
+
+        # conversion matrix
+        K = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(X.shape[0])]
+            L[i * 2] = 1
+            K += [L]
+        K = np.atleast_2d(K)
+
+        # use the filter to process the data
+        KF = KalmanFilter(X, P, H, F, B, U, Q, R)
+        L = zip(V.index.to_numpy()[:-1], V.index.to_numpy()[1:])
+        Z = np.vstack([K.dot(KF.filter_update(V.loc[v].values - V.loc[i].values)).T for i, v in L])
+        
+        # get the data
+        return pv.Vector(Z, columns=V.columns, index=V.index[:-1], dim_unit=dim_unit,
+                         time_unit=V.time_unit, type=type)
+
+
+    def _show(self, V):
+        """
+        shortcut function used to plot data in V.
+
+        Input:
+
+            V:  (pyomech.Vector)
+                vector of data to be plotted.
+        """
+        
+        idx = V.index.to_numpy()
+        for c in V.columns.to_numpy():
+            pl.plot(idx, V[c].values.flatten(), label=c)
+        pl.plot(idx, np.zeros((len(idx), 1)).flatten(), 'k--')
+        pl.legend()
+        pl.show()
+
+
+
 class KalmanFilter():
     
     
-    def __init__(self, X, P, M, estFUN, R=None, **kwargs):
+    def __init__(self, x, P, H, F, B, u=None, Q=None, R=None):
         """
         Initialize the filter. The general Kalman filtering procedure is a 2 steps approach as
         described below:  
@@ -30,30 +296,39 @@ class KalmanFilter():
 
         Input:
 
-            X:      (Nx1 array)
+            x:      (Nx1 array)
                     the initial state vector provided as a column vector with length N.
             
             P:      (NxN array)
                     the initial covariance matrix corresponding to the state X.
 
-            M:      (JxN array)
+            H:      (JxN array)
                     a matrix used to convert the "state space" to the "measurement space".
                     This function must accept a column vector of dimension N and a series of
                     key_labelled parameters. It must return a column vector of dimension J.
-            
-            R:      (JxJ array or None)
-                    a column vector defining the noise to be added to the new measurement
-                    (e.g. instrumental error) during the calculation of the filter gain.
-                    It might be None. In this case it is inizialized to be an array of zeros.
                     
-            estFUN: (function)
-                    a function having form "function(X, P, **kwargs)". This function must
-                    convert the input X (the state vector) and P (its covariance matrix) to
-                    their estimates at the next sample time.
-                    This function must accept a column vector of dimension N, an NxN matrix
-                    and a series of key_labelled parameters. It then must return a column
-                    vector of dimension N, an NxN matrix.
-        
+            F:      (NxN array)
+                    the transition matrix from the actual state to the next.
+            
+            B:      (NxJ array)
+                    the transition matrix from the measurement to the state space.
+
+            u:      (Nx1 array or None)
+                    a vector containing the process noise, i.e. the noise to be added at each
+                    new update to the new state estimate.
+                    It might be None. In this case it is inizialized to be an array of zeros.
+
+            R:      (JxJ array or None)
+                    a square matrix defining the measurement noise to be added to each new
+                    measurement (e.g. instrumental error) during the calculation of the filter
+                    gain. It might be None. In this case it is inizialized to be an array of zeros.
+
+            Q:      (NxN array or None)
+                    a square matrix defining the noise to be added to the covariance of the state
+                    space (e.g. instrumental error) during the calculation of the filter gain.
+                    It might be None. In this case it is inizialized to be an array of zeros.
+
+
         Action of the filter:
 
             The filter contains 2 main functions: "filter" and "filter_update". Their action is
@@ -61,20 +336,20 @@ class KalmanFilter():
 
             1)  The filter uses the provided "estimate" function to predict the next state:
 
-                                    Xest, Pest = estFUN(X, P, **kwargs)
+                                   Xest, Pest = estFUN(X, P, **kwargs)
                 
             2)  Next, the "innovation" phase is obtained measuring the difference between the
                 estimated new state (Xest, Pest) and a new measurement (Z):
 
-                                             Y = Z - M x Xest
-                                             S = M x Pest x M' + R
+                                            Y = Z - M x Xest
+                                            S = M x Pest x M' + R
                 
             3)  Afterwards, the "update" phase adjusts the filter gain and corrects the former
                 estimate and covariance.
 
-                                             K = Pest x M' x (S ** -1)
-                                          Xnew = Xest + K x Y
-                                          Pnew = (I - K x M) x Pest
+                                            K = Pest x M' x (S ** -1)
+                                         Xnew = Xest + K x Y
+                                         Pnew = (I - K x M) x Pest
                 
             4)  If the "filter_update" function was called, the updated state and covariance are
                 stored as new filter state and covariance values.
@@ -88,53 +363,87 @@ class KalmanFilter():
         """
 
         # get X, N and I
-        txt = "'X' must be a (N, 1) numpy.ndarray or pandas.DataFrame instance with 1 column."
-        assert isinstance(X, (np.ndarray, pd.DataFrame)) and X.shape[1] == 1, txt
-        self.N = X.shape[0]
-        self.X = X
-        self.I = np.eye(self.N)
+        assert isinstance(x, (np.ndarray, pd.DataFrame)) and x.shape[1] == 1, self.msg("x", "N", 1)
+        self.N = x.shape[0]
+        self.x = x
 
         # get P
-        txt = "'P' must be a (N, N) numpy.ndarray or pandas.DataFrame instance with N columns"
-        txt += " and rows."
-        assert isinstance(P, (np.ndarray, pd.DataFrame)), txt
-        assert np.all([i == self.N for i in P.shape]), txt
+        assert isinstance(P, (np.ndarray, pd.DataFrame)), self.msg("P", self.N, self.N)
+        assert np.all([i == self.N for i in P.shape]), self.msg("P", self.N, self.N)
         self.P = P
 
-        # get M and J
-        txt = "'M' must be a (J, N) numpy.ndarray or pandas.DataFrame instance with N columns"
-        txt += " and J rows."
-        assert isinstance(M, (np.ndarray, pd.DataFrame)) and M.shape[1] == self.N, txt
-        self.J = M.shape[0]
-        self.M = M
+        # get H and J
+        txt = self.msg("H", "J", self.N)
+        assert isinstance(H, (np.ndarray, pd.DataFrame)) and H.shape[1] == self.N, txt
+        self.J = H.shape[0]
+        self.H = H
         
+        # get F
+        txt = self.msg("F", self.N, self.N)
+        assert isinstance(F, (np.ndarray, pd.DataFrame)), txt
+        assert np.all([i == self.N for i in F.shape]), self.msg("F", self.N, self.N)
+        self.F = F
+
+        # get B
+        assert isinstance(B, (np.ndarray, pd.DataFrame)), self.msg("B", self.N, self.J)
+        assert B.shape[1] == self.J and B.shape[0] == self.N, self.msg("B", self.N, self.J)
+        self.B = B
+
+        # get u
+        if u is not None:
+            assert isinstance(u, (np.ndarray, pd.DataFrame)), self.msg("u", self.J, 1)
+            assert u.shape[0] == self.J and u.shape[1] == 1, self.msg("u", self.J, 1)
+        else:
+            u = np.zeros((self.J, 1))
+        self.u = u
+
         # get R
         if R is not None:
-            txt = "'R' must be a (J, J) numpy.ndarray or pandas.DataFrame instance with J columns"
-            txt += " and rows."
-            assert isinstance(R, (np.ndarray, pd.DataFrame)), txt
-            assert np.all([i == self.J for i in R.shape]), txt
+            assert isinstance(R, (np.ndarray, pd.DataFrame)), self.msg("R", self.J, self.J)
+            assert np.all([i == self.J for i in R.shape]), self.msg("R", self.J, self.J)
         else:
             R = np.zeros((self.J, self.J))
         self.R = R
 
-        # get the estFUN and kwargs
-        self.estimate = estFUN
-        self.est_kwargs = kwargs
-    
+        # get Q
+        if Q is not None:
+            assert isinstance(Q, (np.ndarray, pd.DataFrame)), self.msg("Q", self.N, self.N)
+            assert np.all([i == self.N for i in Q.shape]), self.msg("Q", self.N, self.N)
+        else:
+            Q = np.zeros((self.N, self.N))
+        self.Q = Q
 
-    def filter(self, Z, R=None):
+
+    def msg(self, X, N, M):
+            txt = "'{}' must be a ({}, {}) numpy.ndarray or pandas.DataFrame instance with "
+            txt += "{} rows and {} columns."
+            return txt.format(X, N, M, N, M)    
+
+
+    def filter(self, z, u=None, Q=None, R=None):
         """
-        filter the new measurement (Z) according to the provided measurment noise (R) without
+        filter the new measurement (Z) according to the provided noise (u, R and Q) without
         updating the current filter state.
 
         Input:
 
-            Z:  (Jx1 array)
+            z:  (Jx1 array)
                 a new measurement.
             
+            u:  (Nx1 array or None)
+                a vector containing the process noise, i.e. the noise to be added at each
+                new update to the new state estimate.
+                It might be None. In this case it is inizialized to be an array of zeros.
+
             R:  (JxJ array or None)
-                a new measurement error matrix. If None, the actual store R is used.
+                a square matrix defining the measurement noise to be added to each new
+                measurement (e.g. instrumental error) during the calculation of the filter
+                gain. It might be None. In this case it is inizialized to be an array of zeros.
+
+            Q:  (NxN array or None)
+                a square matrix defining the noise to be added to the covariance of the state
+                space (e.g. instrumental error) during the calculation of the filter gain.
+                It might be None. In this case it is inizialized to be an array of zeros.
 
         Output:
 
@@ -146,21 +455,33 @@ class KalmanFilter():
         """
 
         # return the filtered signal
-        return self._filt(Z, R)[0]
+        return self._filt(z, u, R, Q)[0]
 
     
-    def filter_update(self, Z, R=None):
+    def filter_update(self, z, u=None, Q=None, R=None):
         """
-        filter the new measurement (Z) according to the provided measurment noise (R) and
+        filter the new measurement (Z) according to the provided noise (u, R and Q) and
         update the current filter state.
 
         Input:
 
-            Z:  (Jx1 array)
+            z:  (Jx1 array)
                 a new measurement.
-            
+                        
+            u:  (Nx1 array or None)
+                a vector containing the process noise, i.e. the noise to be added at each
+                new update to the new state estimate.
+                It might be None. In this case it is inizialized to be an array of zeros.
+
             R:  (JxJ array or None)
-                a new measurement error matrix. If None, the actual store R is used.
+                a square matrix defining the measurement noise to be added to each new
+                measurement (e.g. instrumental error) during the calculation of the filter
+                gain. It might be None. In this case it is inizialized to be an array of zeros.
+
+            Q:  (NxN array or None)
+                a square matrix defining the noise to be added to the covariance of the state
+                space (e.g. instrumental error) during the calculation of the filter gain.
+                It might be None. In this case it is inizialized to be an array of zeros.
 
         Output:
 
@@ -172,357 +493,54 @@ class KalmanFilter():
         """
 
         # get the filtered data
-        Zfil, Xnew, Pnew = self._filt(Z, R)
+        Xnew, Pnew = self._filt(z, u, R, Q)
 
         # update the state ofthe filter
-        self.X = Xnew
+        self.x = Xnew
         self.P = Pnew
 
         # return the filtered measure
-        return Zfil
+        return Xnew
 
 
-    def _filt(self, Z, R=None):
+    def _filt(self, z, u=None, R=None, Q=None):
         """
         Internal function that performs all the steps.
-
-        Input:
-
-            Z:      (Jx1 array)
-                    a new measurement.
-            
-            R:      (JxJ array or None)
-                    a new measurement error matrix. If None, the actual store R is used.
-
-        Output:
-
-            Zfil:   (Jx1 array)
-                    the filtered signal
-            
-            Xnew:   (Nx1 array)
-                    the updated state vector.
-            
-            Pnew:   (NxN array)
-                    the updated covariance matrix.
         """
         
         # check the entries
-        txt = "'Z' must be a (J, 1) numpy.ndarray or pandas.DataFrame instance with 1 column"
-        txt += " and J rows."
-        assert isinstance(Z, (np.ndarray, pd.DataFrame)), txt
-        assert Z.shape[1] == 1 and Z.shape[0] == self.J, txt
+        assert isinstance(z, (np.ndarray, pd.DataFrame)), self.msg('z', self.J, 1)
+        assert z.shape[1] == 1 and z.shape[0] == self.J, self.msg('z', self.J, 1)
+        if u is not None:
+            assert isinstance(u, (np.ndarray, pd.DataFrame)), self.msg('u', self.J, 1)
+            assert u.shape[1] == 1 and u.shape[0] == self.J, self.msg('u', self.J, 1)
+            self.u = u
         if R is not None:
-            txt = "'R' must be a (J, J) numpy.ndarray or pandas.DataFrame instance with J columns"
-            txt += " and rows."
-            assert isinstance(R, (np.ndarray, pd.DataFrame)), txt
-            assert np.all([i == self.J for i in R.shape]), txt
+            assert isinstance(R, (np.ndarray, pd.DataFrame)), self.msg('R', self.J, self.J)
+            assert np.all([i == self.J for i in R.shape]), self.msg('R', self.J, self.J)
             self.R = R
+        if Q is not None:
+            assert isinstance(Q, (np.ndarray, pd.DataFrame)), self.msg('Q', self.N, self.N)
+            assert np.all([i == self.J for i in Q.shape]), self.msg('Q', self.N, self.N)
+            self.Q = Q
+
+        eps = np.finfo(float).eps
 
         # get the estimates
-        Xest, Pest = self.estimate(self.X, self.P, **self.est_kwargs)
+        Xest = self.F.dot(self.x) + self.B.dot(self.u)
+        Pest = self.F.dot(self.P).dot(self.F.T) + self.Q
         Xest[np.argwhere(abs(Xest) < eps)] = 0.
         Pest[np.argwhere(abs(Pest) < eps)] = 0.
-                
-        # innovation phase
-        Y = Z - self.M.dot(Xest)
-        S = self.M.dot(Pest).dot(self.M.T) + self.R
-        S[np.argwhere(abs(S) < eps)] = 0.
-
+        
         # get the Kalman gain
-        K = Pest.dot(self.M.T).dot(np.linalg.pinv(S))
+        K = Pest.dot(self.H.T).dot(np.linalg.pinv(self.H.dot(Pest).dot(self.H.T) + self.R))
         K[np.argwhere(abs(K) < eps)] = 0.
 
         # update
-        Xnew = Xest + K.dot(Y)
-        Pnew = (self.I - K.dot(self.M)).dot(Pest)
+        Xnew = Xest + K.dot(z - self.H.dot(Xest))
+        Pnew = (np.eye(Pest.shape[1]) - K.dot(self.H)).dot(Pest)
+        Xnew[np.argwhere(abs(Xnew) < eps)] = 0.
         Pnew[np.argwhere(abs(Pnew) < eps)] = 0.
 
         # finalize
-        Znew = self.M.dot(Xnew)
-        return Znew, Xnew, Pnew
-
-
-
-class KalmanFilterOld():
-    
-    
-    def __init__(self, X, P, F=None, U=None, B=None, Z=None, H=None, Q=None, R=None):
-        """
-        Initialize the filter. The general Kalman filtering procedure is a 2 steps approach as described below:
-                            
-                            Prediction steps:
-
-
-                                X_est = F * X + B * u
-
-                                P_est = F * P * F' + Q
-
-
-                            Update steps:
-
-
-                                            P_est * H'
-                                    K = ------------------
-                                        H * P_est * H' + R
-
-                                X_out = X_est + K * (Z - H * X_est)
-
-                                P_out = (I - K * H) * P_est
-
-    
-        Input:               
-            X:  (Nx1 array)
-                the starting state vector.
-        
-            U:  (Lx1 array)
-                the motion matrix (i.e. the inputs that may affect the transition of the state from one time step to
-                the other.
-        
-            P:  (NxN array)
-                the covariance matrix of the state vector.
-        
-            Z:  (Mx1 array)
-                the new measurement.
-
-            F:  (NxN array)
-                the state transition function. This matrix moves the "old" state variable (X) to the new state variable
-                (X_est).
-
-            B:  (NxL array)
-                the motion transition function. This matrix moves the motion (U) to the new state.
-        
-            H:  (MxN array)
-                the measurement function. This matrix converts the state variable (X_est) from the state space to the
-                measurement space (i.e. the same of Z).
-
-            R:  (MxM array)
-                the measurement noise. This is a diagonal matrix containing the noise of each measure.
-
-            Q:  (NxN array)
-                the process noise to be added to the covariance estimate.        
-        """
-
-        # get the expected N
-        X                    = np.atleast_2d(X)
-        if X.shape[1] > 1: X = X.T
-        self.N               = X.shape[0]
-
-        # generate the identity matrix
-        self.I = np.eye(self.N)
-
-        # check X
-        self.__assertShape(X, "X", self.N, 1, False)
-        self.X               = X
-
-        # check F
-        self.__assertShape(F, "F", self.N, self.N)
-        self.F               = F
-
-        # check P
-        self.__assertShape(P, "P", self.N, self.N, False)
-        self.P               = P
-
-        # get the expected L
-        U                    = np.atleast_2d(U)
-        if U.shape[1] > 1: U = U.T
-        self.L               = U.shape[0]
-
-        # check U
-        self.__assertShape(U, "U", self.L, 1)
-        self.U               = U
-
-        # check B
-        self.__assertShape(B, "B", self.N, self.L)
-        self.B               = B
-        
-        # get the expected M
-        Z                    = np.atleast_2d(Z)
-        if Z.shape[1] > 1: Z = Z.T
-        self.M               = Z.shape[0]
-
-        # check Z
-        self.__assertShape(Z, "Z", self.M, 1)
-        self.Z               = Z
-
-        # check H
-        self.__assertShape(H, "H", self.M, self.N)
-        self.H               = H
-
-        # check Q
-        self.__assertShape(Q, "Q", self.N, self.N)
-        self.Q               = Q
-
-        # check R
-        self.__assertShape(R, "R", self.M, self.M)
-        self.R               = R
-       
-
-    def filter_update(self, Z, F=None, U=None, B=None, H=None, Q=None, R=None):
-        """
-        filter the new measurement and update the state of the filter.
-                            
-                            Prediction steps:
-
-
-                                X_est = F * X + B * u
-
-                                P_est = F * P * F' + Q
-
-
-                            Update steps:
-
-
-                                            P_est * H'
-                                    K = ------------------
-                                        H * P_est * H' + R
-
-                                X_out = X_est + K * (Z - H * X_est)
-
-                                P_out = (I - K * H) * P_est
-
-    
-        Input:               
-            Z:  (Mx1 array)
-                the new measurement.
-
-            U:  (Lx1 array, None)
-                the motion matrix (i.e. the inputs that may affect the transition of the state from one time step to
-                the other.
-
-            F:  (NxN array, None)
-                the state transition function. This matrix moves the "old" state variable (X) to the new state variable
-                (X_est).
-
-            B:  (NxL array, None)
-                the motion transition function. This matrix moves the motion (U) to the new state.
-        
-            H:  (MxN array, None)
-                the measurement function. This matrix converts the state variable (X_est) from the state space to the
-                measurement space (i.e. the same of Z).
-
-            R:  (MxM array, None)
-                the measurement noise. This is a diagonal matrix containing the noise of each measure.
-
-            Q:  (NxN array, None)
-                the process noise to be added to the covariance estimate.        
-        
-        Output:
-            X:  (row vector)
-                the filtered state-space corresponding to the new measurement.
-    
-            P:  (square matrix)
-                the covariance matrix smoothed by the Kalman gain.
-        """   
-           
-        
-        # CHECK THE ENTERED PARAMETERS #
-
-
-        # check F
-        if F is not None:
-            self.__assertShape(F, "F", self.N, self.N, False)
-            self.F               = F
-
-        # get the expected L
-        if U is not None:
-            U                    = np.atleast_2d(U)
-            if U.shape[1] > 1: U = U.T
-            self.L               = U.shape[0]
-
-        # check U
-        if U is not None:
-            self.__assertShape(U, "U", self.L, 1, False)
-            self.U               = U
-
-        # check B
-        if B is not None:
-            self.__assertShape(B, "B", self.N, self.L, False)
-            self.B               = B
-        
-        # get the expected M
-        Z                        = np.atleast_2d(Z)
-        if Z.shape[1] > 1:   Z   = Z.T
-        self.M                   = Z.shape[0]
-
-        # check Z
-        self.__assertShape(Z, "Z", self.M, 1, False)
-        self.Z                   = Z
-
-        # check H
-        if H is not None:
-            self.__assertShape(H, "H", self.M, self.N, False)
-            self.H               = H
-
-        # check Q
-        if Q is not None:
-            self.__assertShape(Q, "Q", self.N, self.N, False)
-            self.Q               = Q
-
-        # check R
-        if R is not None:
-            self.__assertShape(R, "R", self.M, self.M, False)
-            self.R               = R
-
-        
-        # PREDICTION STEP #
-
-
-        # 1. X_est = F * X + B * u
-        #    Here a wild guess of the state corresponding to the next time step is provided.
-        self.X = self.F.dot(self.X) + self.B.dot(self.U) 
-        
-        # 2. P_est = F * P * F' + Q
-        #    This step calculates the covariance matrix corresponding to the estimated new state.
-        self.P = self.F.dot(self.P).dot(self.F.T) + self.Q
-
-
-        # UPDATE STEP #
-
-
-        # 3. get the kalman gain
-        #    the Kalman gain reflects how confident we are to the predicted output compared to the "measured" output.
-        try:
-
-            # this step requires matrix inversion
-            self.K = self.P.dot(self.H.T).dot(np.linalg.inv(self.H.dot(self.P).dot(self.H.T) + self.R))
-
-        except Exception:
-            
-            # if the matrix inversion fails, try with the pseudo inverse
-            self.K = self.P.dot(self.H.T).dot(np.linalg.pinv(self.H.dot(self.P).dot(self.H.T) + self.R))
-           
-        # 4. update the state and the covariance
-        #    this step corrects X by the effect of the new measurement smoothed by the Kalman gain 
-        self.X = self.X + self.K.dot(self.Z - self.H.dot(self.X))
-        I_KH = self.I - self.K.dot(self.H)
-        self.P = I_KH.dot(self.P).dot(I_KH.T) + self.K.dot(self.R).dot(self.K.T)
-    
-        # 5. return the new (filtered) state in the measurement space
-        return self.H.dot(self.X)
-
-
-    def __assertShape(self, what, name, rows, cols, none=True):
-        """
-        check whether the size of the provided variable is consistent with the expectations.
-
-        Input:
-            what:   (Object)
-                    any variable
-            
-            name:   (str)
-                    the name of the variable
-            
-            rows:   (int)
-                    the number of expected rows
-            
-            cols:   (int)
-                    the number of expected cols
-            
-            none:   (bool)
-                    True means that "what" can be None. False, otherwise
-        """
-        if what is not None:
-            txt = "{} must be a {}x{} array".format(name, rows, cols)
-            assert what.shape[0] == rows and what.shape[1] == cols, txt
-        else:
-            assert isinstance(what, NoneType), "{} cannot be None".format(name)
+        return Xnew, Pnew
