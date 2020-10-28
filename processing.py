@@ -29,6 +29,87 @@ fig_size = 300  # pixels
 
 
 
+def rk4(t0, y0, dt, fun, **kwargs):
+    """
+    Fourth order Runge-Kutta integrator for the Ordinary Differential Equation
+    based on discrete data. This method is based on the integration of the function:
+
+                       dy
+            f(t, y) = ----
+                       dx
+
+    with y0 = y(t0)
+
+    Input:
+            
+        t0:     (float)
+                the time zero of the integration.
+            
+        y0:     (float)
+                the starting value.
+
+        dt:     (float)
+                the time step from t0.
+
+        fun:    (function)
+                the function being the first derivative of y over t.
+
+        kwargs: (objects)
+                additional data passed to f.
+    
+    Output:
+
+        y:      (1D array)
+                the integrated signal over t.
+        """
+    
+
+    def _Kn(k, fun, dt, y, t, **kwargs):
+        """
+        get the n-th K value for finding the solution.
+
+        Input:
+
+            k:      (int)
+                    the actual K-th.
+
+            fun:    (function)
+                    the function returing the first derivative of y.
+                
+            dt:      (float)
+                    the step size.
+                
+            y:      (float)
+                    the actual y value.
+
+            t:      (float)
+                    the t value.
+
+            kwargs: (objects)
+                    parameters passed to f.
+            
+        Output:
+
+            y1:     (float)
+                    the resulting Y value.
+        """
+
+        if k == 1:
+            return fun(t, y, **kwargs)
+        elif k == 4:
+            return fun(t + dt, y + _Kn(k - 1, fun, dt, y, t, **kwargs), **kwargs)
+        else:
+            return fun(t + dt * 0.5, y + 0.5 * _Kn(k - 1, fun, dt, y, t, **kwargs), **kwargs)
+    
+
+    # perform the integration
+    y = y0
+    for i in range(4):
+        y += (2 if i > 0 or i < 3 else 1) / 6 * dt * _Kn(i + 1, fun, dt, y0, t0, **kwargs)
+    return y
+
+
+
 def pad(x, before=0, after=0, type="linear", value=0, plot=False, axis=0):
     """
     pad the signal mirroring its ends.

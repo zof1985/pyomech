@@ -12,6 +12,13 @@ import os
 
 
 
+# CONSTANTS
+
+
+G = 9.80665 # acceleration of gravity in m/s^2
+
+
+
 # METHODS
 
 

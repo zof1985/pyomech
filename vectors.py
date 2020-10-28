@@ -12,12 +12,13 @@ import os
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVR
 from sklearn.exceptions import ConvergenceWarning
-from scipy.interpolate import CubicSpline
 from bokeh.plotting import *
 from bokeh.layouts import *
 from bokeh.models import *
 from .utils import *
 from .processing import *
+from quaternion import *
+from scipy.spatial.transform import Rotation
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
@@ -1589,3 +1590,324 @@ class ReferenceFrame():
         V = vector.copy()
         V.loc[V.index] = V.values.dot(self._to_global)
         return V + O
+
+
+
+
+class IMU():
+
+
+    def __init__(self, acc, gyr, static_acc=None, static_gyr=None, isG=False, isRads=False):
+        """
+        Inertial Measurement Unit class object.
+
+        Input:
+
+            acc:        (pyomech.Vector)
+                        accelerometer data.
+            
+            gyr:        (pyomech.Vector)
+                        gyroscope data.
+            
+            static_acc: (pyomech.Vector)
+                        accelerometer data acquired under static stance. It is used as
+                        reference to estimate the accelerometer error and its starting
+                        alignment.
+                        If not provided, acceleration errors are obtained from mean
+                        accelerations obtained from the "acc" data. Conversely,
+                        the IMU is considered perfectly aligned to the system reference frame
+                        (see the notes for further details).
+            
+            static_gyr: (pyomech.Vector)
+                        gyroscope data acquired under static stance. It is used as
+                        reference to estimate the gyroscope error.
+                        If not provided, both measures are obtained from mean
+                        angular velocity data obtained from "gyr".
+            
+            isG:        (bool)
+                        If True, the accelerations are considered to be provided in "G"
+                        units. If not, accelerations from accelerometer are assumed to be provided
+                        in m/s^2 and are normalized to "G".
+            
+            isRads:     (bool)
+                        If True, the angular velocities are considered to be provided in "rad/s"
+                        units. If not, angular velocities from the gyroscope are assumed to be
+                        provided in degrees/s and are converted into rad/s units.
+        
+        Note:
+
+            accelerometer and gyroscope data are thought to be time synchronized and with the same
+            dimensions (X, Y, Z). For the purpose of this class object, the orientation used during
+            data extraction is:
+
+                X:  Forward (positive) / Backward (negative) direction.
+                Y:  Left (positive) / Right (negative) direction.
+                Z:  Up (positive) / Down (negative) direction.
+
+            if static acceleration data is provided, it is used to estimate the True alignment of
+            the IMU, thus the above reference system is corrected in order to obtain the average
+            aligment measured during static stance.
+        """
+        
+        # check the entries
+        txt = "{} must be a pyomech.Vector instance."
+        assert isinstance(acc, Vector), txt.format("acc")
+        assert isinstance(gyr, Vector), txt.format("gyr")
+        if static_acc is not None:
+            assert isinstance(static_acc, Vector), txt.format("static_acc")
+        if static_gyr is not None:
+            assert isinstance(static_gyr, Vector), txt.format("static_gyr")
+        assert isG or not isG, "'isG' must be a bool instance."
+        assert isRads or not isRads, "'isRads' must be a bool instance."
+
+        # check dimensions
+        dims = ['X', 'Y', 'Z']
+        txt = "'X', 'Y', 'Z' dimensions must exist in {}."
+        assert all([any([i == j for j in dims]) for i in acc.columns]), txt.format("acc")
+        assert all([any([i == j for j in dims]) for i in gyr.columns]), txt.format("gyr")
+        assert all([any([i == j for j in dims]) for i in static_acc.columns]), txt.format("static_acc")
+        assert all([any([i == j for j in dims]) for i in static_gyr.columns]), txt.format("static_gyr")
+
+        # store acceleration data
+        self.accelerometer_data = acc / (1 if isG else G)  # convert to G if required
+        self.accelerometer_data.dim_unit = "G"
+        self.accelerometer_data.time_unit = "s"
+        self.accelerometer_data.type = "Accelerometer 3D"
+
+        # store gyro data
+        self.gyroscope_data = gyr / (1 if isRads else (180 / np.pi))
+        self.gyroscope_data.dim_unit = "rad/s"
+        self.gyroscope_data.time_unit = "s"
+        self.gyroscope_data.type = "Gyroscope 3D."
+        
+        # if static_acc is provided estimate the error and the calibration angles
+        if static_acc is not None:
+            acc_err = static_acc.std(0).to_dict("list")
+            acc_angles = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, 1]]).as_euler("xyz")
+            acc_angles = {i: v for i, v in zip(['X', 'Y', 'Z'], acc_angles)}
+
+
+        R = self.madgwickPose()
+        check = 1
+    
+
+    def madgwickPose(self, beta=0.06544985):
+        """
+        estimate the pose of the IMU using a gyroscope and accelerometer.
+        
+        Input:
+
+            beta:   (float)
+                    the gain to be applied for compensating the gyro measurement error.
+                    By default it is set at ~5°/sec, although it is provided in rad.
+        
+        Output:
+
+            R:      (dict)
+                    a dict with the time samples as keys containing a scipy.Rotation class
+                    object as value.
+        """
+
+        # normalizer
+        def normalize(X):
+            """
+            normalize the array
+            """
+            return X / np.sqrt(np.sum(X ** 2))
+
+
+        # initialize
+        SEq = np.quaternion(1, 0, 0, 0)  # quaternion defining the orientation initial conditions
+        K = {}
+
+        # iterate the estimation
+        for n, i in enumerate(self.accelerometer.index.to_numpy()):
+            
+            # get dt
+            if n == 0:
+                dt = 1 / self.accelerometer.sampling_frequency
+            else:
+                dt = i - self.accelerometer.index.to_numpy()[n - 1]
+
+            # get the accelerometer data
+            A = normalize(self.accelerometer.loc[i].values)
+
+            # get the objective function
+            S = SEq.components
+            F = -A + 2 * np.array([[np.prod(S[[1, 3]]) - np.prod(S[[0, 2]])],
+                                   [np.prod(S[[0, 1]]) + np.prod(S[[2, 3]])],
+                                   [0.5 - np.sum(S[[1, 2]] ** 2)]])
+            
+            # get the Jacobian matrix
+            J = 2 * np.array([[-S[2],      S[3],     -S[0],  S[1]],
+                              [ S[1],      S[0],      S[3],  S[2]],
+                              [    0, -2 * S[1], -2 * S[2],     0]]).T
+            
+            # get the normalized gradient
+            SEqA = np.quaternion(*normalize(J.dot(F)).flatten())
+            
+            # get the estimate from the gyroscope
+            Wq = np.quaternion(0, *self.gyroscope.loc[i].values.flatten())
+            SEqW = 0.5 * SEq * Wq
+
+            # integrate and normalize
+            SEq_raw = SEq + (SEqW - (beta * SEqA)) * dt
+            SEq = SEq_raw / SEq_raw.norm()
+
+            # generate the Rotation class object
+            K[i] = R.from_quat(SEq.components).to_euler('xyz')
+
+        # return the rotations
+        return R
+
+
+
+    def integrateTime(self, V, S, dim_unit, type):
+        """
+        generate a Kalman filter and use it to obtain integrated data.
+
+        Input:
+
+            V:  (pyomech.Vector)
+                the vector containing the data to be integrated.
+            
+            S:  (pyomech.Vector)
+                the vector containing the static data used to extract sensor/activity
+                measurement noise.
+        
+        Output:
+
+            X:  (pyomech.Vector)
+                A vector with the same dimensions of V integrated over time.
+        """
+
+        # get the initial state
+        X = np.zeros((V.shape[1], 1))
+
+        # get the measurement to state matrix
+        B = np.eye(V.shape[1]) / V.sampling_frequency
+
+        # get the state to measurement
+        H = np.eye(V.shape[1])
+
+        # initial state variance
+        P = S.cov().values
+
+        # matrix used to estimate the new state.
+        F = np.eye(V.shape[1])
+
+        # process noise variance
+        Q = np.copy(P)
+        
+        # get the measurement noise
+        U = S.var().values
+        R = np.copy(P)
+
+        # use the filter to process the data
+        KF = KalmanFilter(X, P, H, F, B, U, Q, R)
+        K = zip(V.index.to_numpy()[:-1], V.index.to_numpy()[1:])
+        Z = np.vstack([KF.filter_update(V.loc[v].values - V.loc[i].values).T for i, v in K])
+        
+        # get the data
+        return pv.Vector(Z, columns=V.columns, index=V.index[:-1], dim_unit=dim_unit,
+                         time_unit=V.time_unit, type=type)
+
+
+    def doubleIntegrateTime(self, V, S, dim_unit, type):
+        """
+        generate a Kalman filter and use it to obtain double integrated data over time.
+
+        Input:
+
+            V:  (pyomech.Vector)
+                the vector containing the data to be integrated.
+            
+            S:  (pyomech.Vector)
+                the vector containing the static data used to extract sensor/activity
+                measurement noise.
+        
+        Output:
+
+            X:  (pyomech.Vector)
+                A vector with the same dimensions of V integrated over time.
+        """
+
+        # get dt
+        dt = 1 /  V.sampling_frequency
+
+        # get the initial state
+        X = np.zeros((V.shape[1] * 2, 1))
+
+        # get the measurement to state matrix
+        B = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(V.shape[1])]
+            B += [L]
+            L = [0 for j in np.arange(V.shape[1])]
+            L[i] = dt
+            B += [L]
+        B = np.atleast_2d(B)
+        
+        # get the state to measurement
+        H = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(V.shape[1] * 2)]
+            L[i * 2 + 1] = 1
+            H += [L]
+        H = np.atleast_2d(H)
+
+        # matrix used to estimate the new state.
+        F = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(V.shape[1] * 2)]
+            L[2 * i] = 1
+            L[2 * i + 1] = dt
+            F += [L]
+            L = [1 if j == (i * 2 + 1) else 0 for j in np.arange(V.shape[1] * 2)]
+            F += [L]
+        F = np.atleast_2d(F)
+
+        # initial state variance
+        P = H.T.dot(S.cov().values).dot(H)
+
+        # process noise variance
+        Q = np.copy(P)
+        
+        # get the measurement noise
+        U = S.var().values
+        R = S.cov().values
+
+        # conversion matrix
+        K = []
+        for i in np.arange(V.shape[1]):
+            L = [0 for j in np.arange(X.shape[0])]
+            L[i * 2] = 1
+            K += [L]
+        K = np.atleast_2d(K)
+
+        # use the filter to process the data
+        KF = KalmanFilter(X, P, H, F, B, U, Q, R)
+        L = zip(V.index.to_numpy()[:-1], V.index.to_numpy()[1:])
+        Z = np.vstack([K.dot(KF.filter_update(V.loc[v].values - V.loc[i].values)).T for i, v in L])
+        
+        # get the data
+        return pv.Vector(Z, columns=V.columns, index=V.index[:-1], dim_unit=dim_unit,
+                         time_unit=V.time_unit, type=type)
+
+
+    def _show(self, V):
+        """
+        shortcut function used to plot data in V.
+
+        Input:
+
+            V:  (pyomech.Vector)
+                vector of data to be plotted.
+        """
+        
+        idx = V.index.to_numpy()
+        for c in V.columns.to_numpy():
+            pl.plot(idx, V[c].values.flatten(), label=c)
+        pl.plot(idx, np.zeros((len(idx), 1)).flatten(), 'k--')
+        pl.legend()
+        pl.show()
