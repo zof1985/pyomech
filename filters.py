@@ -144,7 +144,7 @@ class IMU():
             dt = (1 / A.sampling_frequency) if n == 0 else (i - A.index.to_numpy()[n - 1]) # get dt
 
             # get the objective function
-            F = 
+            F = []
 """
 // Local system variables
 float norm; // vector norm
