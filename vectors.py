@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import warnings
 import os
+import matplotlib.pyplot as pl
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVR
 from sklearn.exceptions import ConvergenceWarning
@@ -17,6 +18,7 @@ from bokeh.layouts import *
 from bokeh.models import *
 from .utils import *
 from .processing import *
+from .filters import *
 from quaternion import *
 from scipy.spatial.transform import Rotation
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
@@ -1226,6 +1228,11 @@ class Vector(pd.DataFrame):
 
 
 
+    def plot(self, *args, **kwargs):
+        return pd.DataFrame(self).plot(*args, **kwargs)
+
+
+
 class VectorDict(dict):
     """
     Create a dict of "Vector" object(s). It is a simple wrapper of the "dict" class object with additional methods.
@@ -1670,11 +1677,11 @@ class IMU():
             assert all([any([i == j for j in dims]) for i in cmp[c].columns]), txt.format(c)
         
         # store acceleration data
-        self.accelerometer_data = acc / (1 if isG else G)  # convert to G if required
-        self.accelerometer_data.dim_unit = "G"
+        self.accelerometer_data = acc * (G if isG else 1)  # convert to G if required
+        self.accelerometer_data.dim_unit = "m/s^2"
         self.accelerometer_data.time_unit = "s"
         self.accelerometer_data.type = "Accelerometer 3D"
-        static_acc = static_acc / (1 if isG else G)
+        static_acc = static_acc * (G if isG else 1)
 
         # store gyro data
         self.gyroscope_data = gyr / (1 if isRads else (180 / np.pi))
@@ -1685,42 +1692,89 @@ class IMU():
         
         # if static_acc is provided estimate the error and the calibration angles
         if static_acc is not None:
-            acc_std = {i: np.std(static_acc[i].values.flatten()) for i in ['X', 'Y', 'Z']}
-            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, 1]])[0]
+            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, G]])[0]
             imu_ang = np.quaternion(*acc_rot.as_quat())
         else:
-            acc_std = {i: np.std(acc[i].values.flatten()) for i in ['X', 'Y', 'Z']}
             imu_ang = np.quaternion(1, 0, 0, 0)
-        
-        # get the gyroscope error
-        if static_gyr is not None:
-            gyr_std = {i: np.std(static_gyr[i].values.flatten()) for i in ['X', 'Y', 'Z']}
-        else:
-            gyr_std = {i: np.std(gyr[i].values.flatten()) for i in ['X', 'Y', 'Z']}
 
         # get the accelerations corresponding to quiet standing
         S = np.quaternion(*imu_ang.components)
 
-        # setup the pose estimate
-        P = {i: [] for i in dims}  # temporary storing variable for the IMU pose
-
+        # initialize the estimates of linear position and velocity
+        Ao = {i: [] for i in dims}
+        Ap = {i: [] for i in dims}
+        Av = {i: [] for i in dims}
+        Aa = {i: [] for i in dims}
+        
         # get the gain to be used for pose estimation
         # it is calculated as suggested by Madgwick (2010)
-        beta = np.sqrt(3 / 4) * np.mean([gyr_std[i] for i in gyr_std])
+        beta = np.sqrt(3 / 4) * np.mean(static_gyr.std(0).values)
 
-        # estimate the pose at each time instant
+        # initialize the Kalman filter used to extract position and velocity estimates
+        J = len(dims)
         I = self.accelerometer_data.index.to_numpy()
         dt = np.concatenate([[1 / self.accelerometer_data.sampling_frequency], np.diff(I)])
+        t = np.mean(dt)
+        B = np.array([[(t**2)/2,        0,        0],                   # measurement to state
+                      [       0, (t**2)/2,        0],
+                      [       0,        0, (t**2)/2],
+                      [       t,        0,        0],
+                      [       0,        t,        0],
+                      [       0,        0,        t]
+                      ])
+        X = B.dot(self.accelerometer_data.iloc[0].values)               # initial state
+        H = np.array([[2/(t**2), 0, 0, -1/t, 0, 0],                     # state to measurement
+                      [0, 2/(t**2), 0, 0, -1/t, 0],
+                      [0, 0, 2/(t**2), 0, 0, -1/t]
+                      ])
+        F = np.eye(J * 2)                                                # new state estimation
+        W = np.array([[(t**2)/2],                                        # process noise
+                      [(t**2)/2],
+                      [(t**2)/2],
+                      [       t],
+                      [       t],
+                      [       t]
+                      ])
+        N = np.mean(static_acc.std(0).values)
+        Q = W.dot(W.T) * N
+        P = np.copy(Q)
+        R = np.eye(J) * N                                               # measurement noise
+        U = self.accelerometer_data.iloc[0].values
+        K = KalmanFilter(X, P, H, F, B, U, Q, R)
+
+        # process data
         for i, t in zip(I, dt):
-            a = self.accelerometer_data.loc[i].values.T
-            w = self.gyroscope_data.loc[i].values.T
-            S = self._madgwickPose(S, a, w, t, beta)
-            for d, a in zip(dims, Rotation.from_quat(S.components).as_euler("xyz")):
-                P[d] += [a]
-        P = Vector(P, index=I, dim_unit="rad", time_unit="s", type="Angle")
-        
-        # get the accelerations in the external reference frame
-        
+            
+            # get the sensors data at the current instant
+            a = self.accelerometer_data.loc[i].values
+            w = self.gyroscope_data.loc[i].values
+
+            # estimate the pose
+            p = self._madgwickPose(S, a, w, t, beta)
+            
+            # get the orientation angles
+            r = Rotation.from_quat(p.components)
+            for d, j in zip(dims, r.as_euler("xyz")):
+                Ao[d] += [j]
+
+            # remove gravity
+            h = Rotation.align_vectors(a.T, np.array([[0, 0, G]]))[0]
+            k = h.inv().apply(h.apply(a.T) - np.array([[0, 0, G]])).T
+
+            # update the kalman filter
+            x = K.filter_update(k, u=k)
+
+            # extract position and speed
+            for j, d in zip(np.arange(J), dims):
+                Aa[d] += [k[j][0]]
+                Ap[d] += [x[j][0]]
+                Av[d] += [x[j + 3][0]]
+
+        # get vectors from data
+        self.pose = Vector(Ao, index=I, dim_unit="rad", time_unit="s", type="Angle")
+        self.lin_vel = Vector(Av, index=I, dim_unit="m/s", time_unit="s", type="Velocity")
+        self.lin_pos = Vector(Ap, index=I, dim_unit="m", time_unit="s", type="Position")
+
 
 
     def _madgwickPose(self, S, A, W, dt, beta):
@@ -1763,9 +1817,9 @@ class IMU():
 
         # get the objective function
         Sc = S.components
-        F = -An.T + 2 * np.array([[np.prod(Sc[[1, 3]]) - np.prod(Sc[[0, 2]])],
-                                  [np.prod(Sc[[0, 1]]) + np.prod(Sc[[2, 3]])],
-                                  [0.5 - np.sum(Sc[[1, 2]] ** 2)]])
+        F = -An + 2 * np.array([[np.prod(Sc[[1, 3]]) - np.prod(Sc[[0, 2]])],
+                                [np.prod(Sc[[0, 1]]) + np.prod(Sc[[2, 3]])],
+                                [0.5 - np.sum(Sc[[1, 2]] ** 2)]])
             
         # get the Jacobian matrix
         J = 2 * np.array([[-Sc[2],      Sc[3],     -Sc[0],  Sc[1]],
@@ -1773,8 +1827,8 @@ class IMU():
                           [     0, -2 * Sc[1], -2 * Sc[2],      0]]).T
             
         # get the gradient
-        G = J.dot(F)
-        Gn = np.quaternion(*(G / np.sqrt(np.sum(G ** 2))))
+        Gr = J.dot(F)
+        Gn = np.quaternion(*(Gr / np.sqrt(np.sum(Gr ** 2))))
             
         # get the estimate from the gyroscope
         Sw = 0.5 * S * np.quaternion(0, *W.flatten())
@@ -1782,155 +1836,3 @@ class IMU():
         # integrate and normalize
         Si = S + (Sw - (beta * Gn)) * dt
         return Si / Si.norm()
-
-
-
-    def integrateTime(self, V, S, dim_unit, type):
-        """
-        generate a Kalman filter and use it to obtain integrated data.
-
-        Input:
-
-            V:  (pyomech.Vector)
-                the vector containing the data to be integrated.
-            
-            S:  (pyomech.Vector)
-                the vector containing the static data used to extract sensor/activity
-                measurement noise.
-        
-        Output:
-
-            X:  (pyomech.Vector)
-                A vector with the same dimensions of V integrated over time.
-        """
-
-        # get the initial state
-        X = np.zeros((V.shape[1], 1))
-
-        # get the measurement to state matrix
-        B = np.eye(V.shape[1]) / V.sampling_frequency
-
-        # get the state to measurement
-        H = np.eye(V.shape[1])
-
-        # initial state variance
-        P = S.cov().values
-
-        # matrix used to estimate the new state.
-        F = np.eye(V.shape[1])
-
-        # process noise variance
-        Q = np.copy(P)
-        
-        # get the measurement noise
-        U = S.var().values
-        R = np.copy(P)
-
-        # use the filter to process the data
-        KF = KalmanFilter(X, P, H, F, B, U, Q, R)
-        K = zip(V.index.to_numpy()[:-1], V.index.to_numpy()[1:])
-        Z = np.vstack([KF.filter_update(V.loc[v].values - V.loc[i].values).T for i, v in K])
-        
-        # get the data
-        return pv.Vector(Z, columns=V.columns, index=V.index[:-1], dim_unit=dim_unit,
-                         time_unit=V.time_unit, type=type)
-
-
-    def doubleIntegrateTime(self, V, S, dim_unit, type):
-        """
-        generate a Kalman filter and use it to obtain double integrated data over time.
-
-        Input:
-
-            V:  (pyomech.Vector)
-                the vector containing the data to be integrated.
-            
-            S:  (pyomech.Vector)
-                the vector containing the static data used to extract sensor/activity
-                measurement noise.
-        
-        Output:
-
-            X:  (pyomech.Vector)
-                A vector with the same dimensions of V integrated over time.
-        """
-
-        # get dt
-        dt = 1 /  V.sampling_frequency
-
-        # get the initial state
-        X = np.zeros((V.shape[1] * 2, 1))
-
-        # get the measurement to state matrix
-        B = []
-        for i in np.arange(V.shape[1]):
-            L = [0 for j in np.arange(V.shape[1])]
-            B += [L]
-            L = [0 for j in np.arange(V.shape[1])]
-            L[i] = dt
-            B += [L]
-        B = np.atleast_2d(B)
-        
-        # get the state to measurement
-        H = []
-        for i in np.arange(V.shape[1]):
-            L = [0 for j in np.arange(V.shape[1] * 2)]
-            L[i * 2 + 1] = 1
-            H += [L]
-        H = np.atleast_2d(H)
-
-        # matrix used to estimate the new state.
-        F = []
-        for i in np.arange(V.shape[1]):
-            L = [0 for j in np.arange(V.shape[1] * 2)]
-            L[2 * i] = 1
-            L[2 * i + 1] = dt
-            F += [L]
-            L = [1 if j == (i * 2 + 1) else 0 for j in np.arange(V.shape[1] * 2)]
-            F += [L]
-        F = np.atleast_2d(F)
-
-        # initial state variance
-        P = H.T.dot(S.cov().values).dot(H)
-
-        # process noise variance
-        Q = np.copy(P)
-        
-        # get the measurement noise
-        U = S.var().values
-        R = S.cov().values
-
-        # conversion matrix
-        K = []
-        for i in np.arange(V.shape[1]):
-            L = [0 for j in np.arange(X.shape[0])]
-            L[i * 2] = 1
-            K += [L]
-        K = np.atleast_2d(K)
-
-        # use the filter to process the data
-        KF = KalmanFilter(X, P, H, F, B, U, Q, R)
-        L = zip(V.index.to_numpy()[:-1], V.index.to_numpy()[1:])
-        Z = np.vstack([K.dot(KF.filter_update(V.loc[v].values - V.loc[i].values)).T for i, v in L])
-        
-        # get the data
-        return pv.Vector(Z, columns=V.columns, index=V.index[:-1], dim_unit=dim_unit,
-                         time_unit=V.time_unit, type=type)
-
-
-    def _show(self, V):
-        """
-        shortcut function used to plot data in V.
-
-        Input:
-
-            V:  (pyomech.Vector)
-                vector of data to be plotted.
-        """
-        
-        idx = V.index.to_numpy()
-        for c in V.columns.to_numpy():
-            pl.plot(idx, V[c].values.flatten(), label=c)
-        pl.plot(idx, np.zeros((len(idx), 1)).flatten(), 'k--')
-        pl.legend()
-        pl.show()
