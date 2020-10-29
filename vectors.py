@@ -1653,21 +1653,22 @@ class IMU():
         txt = "{} must be a pyomech.Vector instance."
         assert isinstance(acc, Vector), txt.format("acc")
         assert isinstance(gyr, Vector), txt.format("gyr")
+        cmp = {'acc': acc, 'gyr': gyr}
         if static_acc is not None:
             assert isinstance(static_acc, Vector), txt.format("static_acc")
+            cmp['static_acc'] = static_acc
         if static_gyr is not None:
             assert isinstance(static_gyr, Vector), txt.format("static_gyr")
+            cmp['static_gyr'] = static_gyr
         assert isG or not isG, "'isG' must be a bool instance."
         assert isRads or not isRads, "'isRads' must be a bool instance."
 
         # check dimensions
         dims = ['X', 'Y', 'Z']
         txt = "'X', 'Y', 'Z' dimensions must exist in {}."
-        assert all([any([i == j for j in dims]) for i in acc.columns]), txt.format("acc")
-        assert all([any([i == j for j in dims]) for i in gyr.columns]), txt.format("gyr")
-        assert all([any([i == j for j in dims]) for i in static_acc.columns]), txt.format("static_acc")
-        assert all([any([i == j for j in dims]) for i in static_gyr.columns]), txt.format("static_gyr")
-
+        for c in cmp:
+            assert all([any([i == j for j in dims]) for i in cmp[c].columns]), txt.format(c)
+        
         # store acceleration data
         self.accelerometer_data = acc / (1 if isG else G)  # convert to G if required
         self.accelerometer_data.dim_unit = "G"
@@ -1682,83 +1683,102 @@ class IMU():
         
         # if static_acc is provided estimate the error and the calibration angles
         if static_acc is not None:
-            acc_err = static_acc.std(0).to_dict("list")
-            acc_angles = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, 1]]).as_euler("xyz")
-            acc_angles = {i: v for i, v in zip(['X', 'Y', 'Z'], acc_angles)}
+            acc_std = {i: np.std(static_acc[i].values.flatten()) for i in ['X', 'Y', 'Z']}
+            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, 1]])
+            imu_ang = np.quaternion(*acc_rot.as_quaternion())
+        else:
+            acc_std = {i: np.std(acc[i].values.flatten()) for i in ['X', 'Y', 'Z']}
+            imu_ang = np.quaternion(1, 0, 0, 0)
+        
+        # get the gyroscope error
+        if static_gyr is not None:
+            gyr_std = {i: np.std(static_gyr[i].values.flatten()) for i in ['X', 'Y', 'Z']}
+        else:
+            gyr_std = {i: np.std(gyr[i].values.flatten()) for i in ['X', 'Y', 'Z']}
 
+        # get the accelerations corresponding to quiet standing
+        S = np.copy(imu_ang)
 
-        R = self.madgwickPose()
-        check = 1
-    
+        # setup the pose estimate
+        P = {i: [] for i in dims}  # temporary storing variable for the IMU pose
 
-    def madgwickPose(self, beta=0.06544985):
+        # get the gain to be used for pose estimation
+        # it is calculated as suggested by Madgwick (2010)
+        beta = np.sqrt(3 / 4) * np.mean([gyr_std[i] for i in gyr_std])
+
+        # estimate the pose at each time instant
+        A = self.accelerometer_data / self.accelerometer_data.module.values
+        I = self.accelerometer_data.index.to_numpy()
+        dt = np.concatenate([[1 / A.sampling_frequency], np.diff(I)])
+        for n, i in enumerate(I):
+            a = A.loc[i].values.T
+            w = self.gyroscope_data.loc[i].values.T
+            quat = Rotation.from_quat(self._madgwickPose(S, a, w, dt, beta).components)
+            for d, a in zip(dims, quat.as_euler("xyz")):
+                P[d] += [a]
+        P = Vector(P, index=I, dim_unit="rad", time_unit="s", type="Angle")
+        check = 2
+        
+
+    def _madgwickPose(self, S, A, W, dt, beta):
         """
         estimate the pose of the IMU using a gyroscope and accelerometer.
         
         Input:
 
+            S:      (quaternion)
+                    the initial pose estimate
+            
+            A:      (1x3 numpy array)
+                    the accelerometer data corresponding to one time instant.
+        
+            W:      (1x3 numpy array)
+                    the gyroscope data corresponding to one time instant.
+
+            dt:     (float)
+                    the time difference between the current time instant and the one
+                    corresponding to the initial pose estimate.
+
             beta:   (float)
                     the gain to be applied for compensating the gyro measurement error.
-                    By default it is set at ~5°/sec, although it is provided in rad.
         
         Output:
 
-            R:      (dict)
-                    a dict with the time samples as keys containing a scipy.Rotation class
-                    object as value.
+            R:      (quaternion)
+                    the pose estimate after dt time.
+
+        References:
+
+            Madgwick, S. O. H., Harrison, A. J. L., & Vaidyanathan, R. (2011).
+                Estimation of IMU and MARG orientation using a gradient descent algorithm.
+                2011 IEEE International Conference on Rehabilitation Robotics.
+                https://doi.org/10.1109/ICORR.2011.5975346
         """
+        
+        # get normalized accelerations
+        An = A / np.sqrt(np.sum(A ** 2))
 
-        # normalizer
-        def normalize(X):
-            """
-            normalize the array
-            """
-            return X / np.sqrt(np.sum(X ** 2))
-
-
-        # initialize
-        SEq = np.quaternion(1, 0, 0, 0)  # quaternion defining the orientation initial conditions
-        K = {}
-
-        # iterate the estimation
-        for n, i in enumerate(self.accelerometer.index.to_numpy()):
+        # get the objective function
+        Sc = S.components
+        F = -An.T + 2 * np.array([[np.prod(Sc[[1, 3]]) - np.prod(Sc[[0, 2]])],
+                                  [np.prod(Sc[[0, 1]]) + np.prod(Sc[[2, 3]])],
+                                  [0.5 - np.sum(Sc[[1, 2]] ** 2)]])
             
-            # get dt
-            if n == 0:
-                dt = 1 / self.accelerometer.sampling_frequency
-            else:
-                dt = i - self.accelerometer.index.to_numpy()[n - 1]
-
-            # get the accelerometer data
-            A = normalize(self.accelerometer.loc[i].values)
-
-            # get the objective function
-            S = SEq.components
-            F = -A + 2 * np.array([[np.prod(S[[1, 3]]) - np.prod(S[[0, 2]])],
-                                   [np.prod(S[[0, 1]]) + np.prod(S[[2, 3]])],
-                                   [0.5 - np.sum(S[[1, 2]] ** 2)]])
+        # get the Jacobian matrix
+        J = 2 * np.array([[-Sc[2],      Sc[3],     -Sc[0],  Sc[1]],
+                          [ Sc[1],      Sc[0],      Sc[3],  Sc[2]],
+                          [     0, -2 * Sc[1], -2 * Sc[2],      0]]).T
             
-            # get the Jacobian matrix
-            J = 2 * np.array([[-S[2],      S[3],     -S[0],  S[1]],
-                              [ S[1],      S[0],      S[3],  S[2]],
-                              [    0, -2 * S[1], -2 * S[2],     0]]).T
+        # get the gradient
+        G = J.dot(F)
+        Gn = np.quaternion(*(G / np.sqrt(np.sum(G ** 2))))
             
-            # get the normalized gradient
-            SEqA = np.quaternion(*normalize(J.dot(F)).flatten())
-            
-            # get the estimate from the gyroscope
-            Wq = np.quaternion(0, *self.gyroscope.loc[i].values.flatten())
-            SEqW = 0.5 * SEq * Wq
+        # get the estimate from the gyroscope
+        Sw = 0.5 * S * np.quaternion(0, *W.flatten())
 
-            # integrate and normalize
-            SEq_raw = SEq + (SEqW - (beta * SEqA)) * dt
-            SEq = SEq_raw / SEq_raw.norm()
-
-            # generate the Rotation class object
-            K[i] = R.from_quat(SEq.components).to_euler('xyz')
-
-        # return the rotations
-        return R
+        # integrate and normalize
+        Si = S + (Sw - (beta * Gn)) * dt
+        return Si / Si.norm()
 
 
 
