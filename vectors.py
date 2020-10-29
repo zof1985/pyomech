@@ -1691,8 +1691,10 @@ class IMU():
         static_gyr = static_gyr / (1 if isRads else (180 / np.pi))
         
         # if static_acc is provided estimate the error and the calibration angles
+        M = np.mean(static_acc.module.values.flatten())
+        g = np.array([[0, 0, 1]]) * M
         if static_acc is not None:
-            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, G]])[0]
+            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, g)[0]
             imu_ang = np.quaternion(*acc_rot.as_quat())
         else:
             imu_ang = np.quaternion(1, 0, 0, 0)
@@ -1722,7 +1724,7 @@ class IMU():
                       [       0,        t,        0],
                       [       0,        0,        t]
                       ])
-        X = B.dot(self.accelerometer_data.iloc[0].values)               # initial state
+        X = np.zeros((J * 2, 1))
         H = np.array([[2/(t**2), 0, 0, -1/t, 0, 0],                     # state to measurement
                       [0, 2/(t**2), 0, 0, -1/t, 0],
                       [0, 0, 2/(t**2), 0, 0, -1/t]
@@ -1735,11 +1737,10 @@ class IMU():
                       [       t],
                       [       t]
                       ])
-        N = np.mean(static_acc.std(0).values)
-        Q = W.dot(W.T) * N
+        Q = B.dot(static_acc.std(0).values).dot(W.T)                     # process noise
         P = np.copy(Q)
-        R = np.eye(J) * N                                               # measurement noise
-        U = self.accelerometer_data.iloc[0].values
+        R = static_acc.cov().values / 10                                     # measurement noise
+        U = np.zeros((J, 1))
         K = KalmanFilter(X, P, H, F, B, U, Q, R)
 
         # process data
@@ -1758,8 +1759,7 @@ class IMU():
                 Ao[d] += [j]
 
             # remove gravity
-            h = Rotation.align_vectors(a.T, np.array([[0, 0, G]]))[0]
-            k = h.inv().apply(h.apply(a.T) - np.array([[0, 0, G]])).T
+            k = r.inv().apply((a - r.apply(g).T).T).T
 
             # update the kalman filter
             x = K.filter_update(k, u=k)
@@ -1772,6 +1772,7 @@ class IMU():
 
         # get vectors from data
         self.pose = Vector(Ao, index=I, dim_unit="rad", time_unit="s", type="Angle")
+        self.lin_acc = Vector(Aa, index=I, dim_unit="m/s^2", time_unit="s", type="Acceleration")
         self.lin_vel = Vector(Av, index=I, dim_unit="m/s", time_unit="s", type="Velocity")
         self.lin_pos = Vector(Ap, index=I, dim_unit="m", time_unit="s", type="Position")
 
