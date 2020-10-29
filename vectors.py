@@ -1674,18 +1674,20 @@ class IMU():
         self.accelerometer_data.dim_unit = "G"
         self.accelerometer_data.time_unit = "s"
         self.accelerometer_data.type = "Accelerometer 3D"
+        static_acc = static_acc / (1 if isG else G)
 
         # store gyro data
         self.gyroscope_data = gyr / (1 if isRads else (180 / np.pi))
         self.gyroscope_data.dim_unit = "rad/s"
         self.gyroscope_data.time_unit = "s"
         self.gyroscope_data.type = "Gyroscope 3D."
+        static_gyr = static_gyr / (1 if isRads else (180 / np.pi))
         
         # if static_acc is provided estimate the error and the calibration angles
         if static_acc is not None:
             acc_std = {i: np.std(static_acc[i].values.flatten()) for i in ['X', 'Y', 'Z']}
-            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, 1]])
-            imu_ang = np.quaternion(*acc_rot.as_quaternion())
+            acc_rot = Rotation.align_vectors(static_acc.mean(0).values.T, [[0, 0, 1]])[0]
+            imu_ang = np.quaternion(*acc_rot.as_quat())
         else:
             acc_std = {i: np.std(acc[i].values.flatten()) for i in ['X', 'Y', 'Z']}
             imu_ang = np.quaternion(1, 0, 0, 0)
@@ -1697,7 +1699,7 @@ class IMU():
             gyr_std = {i: np.std(gyr[i].values.flatten()) for i in ['X', 'Y', 'Z']}
 
         # get the accelerations corresponding to quiet standing
-        S = np.copy(imu_ang)
+        S = np.quaternion(*imu_ang.components)
 
         # setup the pose estimate
         P = {i: [] for i in dims}  # temporary storing variable for the IMU pose
@@ -1707,18 +1709,19 @@ class IMU():
         beta = np.sqrt(3 / 4) * np.mean([gyr_std[i] for i in gyr_std])
 
         # estimate the pose at each time instant
-        A = self.accelerometer_data / self.accelerometer_data.module.values
         I = self.accelerometer_data.index.to_numpy()
-        dt = np.concatenate([[1 / A.sampling_frequency], np.diff(I)])
-        for n, i in enumerate(I):
-            a = A.loc[i].values.T
+        dt = np.concatenate([[1 / self.accelerometer_data.sampling_frequency], np.diff(I)])
+        for i, t in zip(I, dt):
+            a = self.accelerometer_data.loc[i].values.T
             w = self.gyroscope_data.loc[i].values.T
-            quat = Rotation.from_quat(self._madgwickPose(S, a, w, dt, beta).components)
-            for d, a in zip(dims, quat.as_euler("xyz")):
+            S = self._madgwickPose(S, a, w, t, beta)
+            for d, a in zip(dims, Rotation.from_quat(S.components).as_euler("xyz")):
                 P[d] += [a]
         P = Vector(P, index=I, dim_unit="rad", time_unit="s", type="Angle")
-        check = 2
         
+        # get the accelerations in the external reference frame
+        
+
 
     def _madgwickPose(self, S, A, W, dt, beta):
         """
