@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import warnings
 import os
-import matplotlib.pyplot as pl
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVR
 from sklearn.exceptions import ConvergenceWarning
