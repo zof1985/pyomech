@@ -256,125 +256,10 @@ class LinearRegression():
 
 
 
-class PolynomialRegression(LinearRegression):
-
-
-    def __init__(self, y, x, order=None, fit_intercept=True):
-        """
-        Perform the polynomial regression of y given x. The polynomial order can be specified via order, otherwise the
-        order ensuring that all the extracted coefficients are not zero.
-
-        Input:
-            y:              (1D array)
-                            the array containing the dependent variable.
-
-            x:              (1D array)
-                            the array containing the indipendent variable.
-
-            order:          (None or int)
-                            the order of the polynomial regression. If None, the order resulting in the highest 
-                            Adjusted R-squared.
-
-            fit_intercept:  (bool)
-                            Should the intercept be included in the model?
-        """ 
-
-        # store the entered parameters
-        self.y = np.atleast_2d(y)
-        self.x = np.atleast_2d(x)
-        if self.x.shape[1] > 1:
-            if self.x.shape[0] > 1:
-                raise ValueError("'x' must be a 1D array or a 2D array with 1 dimension.")
-            else:
-                self.x = self.x.T
-        self.fit_intercept = fit_intercept
-        
-        # handle the case the order is not provided
-        if order is None:
-            order = 0
-            r2_adj = -1
-            while True:
-                self.__fit__(order + 1)
-                if np.max([0, self.R2_adjusted]) > r2_adj and self.R2_adjusted < 1:
-                    r2_adj = np.max([0, self.R2_adjusted])
-                    order += 1
-                else:
-                    self.__fit__(order)
-                    break
-
-        # now handle the case the order is zero
-        elif order == 0:
-            self.order = order
-            X = np.tile(np.mean(y), len(y))
-            super(PolynomialRegression, self).__init__(self.y, X, self.fit_intercept)
-
-        # fit the model with the given order
-        else:
-            self.__fit__(order)
-
-
-
-    def __fit__(self, order):
-        """
-        It returns the set of coefficients corresponding to a model with the provided order.
-        """
-        self.order = order
-        X = np.atleast_2d([self.x ** i for i in np.arange(self.order) + 1]).T
-        super(PolynomialRegression, self).__init__(self.y, X, self.fit_intercept)
-        self.x = X[:, 0]
-
-
-    
-    def copy(self):
-        """
-        copy the current instance
-        """
-        return PolynomialRegression(self.y, self.x, self.order, self.digits, self.fit_intercept)
-
-
-
-    def predict(self, x):
-        """
-        predict the fitted Y value according to the provided x.
-        """
-        s = np.hstack([(np.atleast_2d(x).T ** (i + 1)) for i in np.arange(self.order)])
-        return super(PolynomialRegression, self).predict(s)
-
-
-
-    @property
-    def R2(self):
-        """
-        calculate the R-squared of the fitted model.
-        """
-        if self.predict(self.x) is None:
-            check = 1
-        return np.corrcoef(self.y, self.predict(self.x))[0, 1] ** 2
-
-
-
-    @property
-    def R2_adjusted(self):
-        """
-        calculate the Adjusted R-squared of the fitted model.
-        """
-        return 1 - (1 - self.R2) * (len(self.y) - 1) / (len(self.y) - self.order - 1)
-
-
-
-    @property
-    def RMSE(self):
-        """
-        Get the Root Mean Squared Error
-        """
-        return np.sqrt(np.mean((self.y - self.predict(self.x)) ** 2))
-
-
-
 class PowerRegression():
 
 
-    def __init__(self, y, x, digits=5):
+    def __init__(self, y, x):
         """
         Perform the power regression of y given x according to the model:
         
@@ -398,17 +283,16 @@ class PowerRegression():
         # store the entered parameters
         self.y = y
         self.x = x
-        self.digits = digits
         eps = np.finfo(float).eps
         
         # get delta as the offset of y
-        self.alpha = np.round(np.min(self.y) - 1, digits)
+        self.alpha = np.min(self.y) - 1
         
         # get Y (ensure no values are zero)
         Y = np.log(np.atleast_2d(y - self.alpha).T)
                 
         # get beta as the offset of x
-        self.gamma = np.round(1 - np.round(np.min(x), digits), digits)
+        self.gamma = 1 - np.min(x)
         
         # get X (ensure no values are zero)
         X = np.hstack([np.ones(Y.shape), np.log(np.atleast_2d(x + self.gamma).T)])
@@ -417,8 +301,8 @@ class PowerRegression():
         coefs = sl.inv(X.T.dot(X)).dot(X.T).dot(Y)
         
         # get the coefficients
-        self.delta = np.round(coefs[1][0], digits)
-        self.beta = np.round(np.e ** coefs[0][0], digits)
+        self.delta = coefs[1][0]
+        self.beta = np.e ** coefs[0][0]
 
 
 
@@ -426,7 +310,7 @@ class PowerRegression():
         """
         copy the current instance
         """
-        return PowerRegression(self.y, self.x, self.digits)
+        return PowerRegression(self.y, self.x)
 
 
 
