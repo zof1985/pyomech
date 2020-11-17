@@ -178,7 +178,7 @@ class LinearRegression():
         """
         copy the current instance
         """
-        return LinearRegression(self.y, self.x, self.digits, self.fit_intercept)
+        return LinearRegression(self.Y, self.X, self.fit_intercept)
 
 
 
@@ -186,32 +186,15 @@ class LinearRegression():
         """
         predict the fitted Y value according to the provided x.
         """
-        if len(self.coefs) == 0:
-            return self.intercept
+        X = self.__simplify__(x, 'x')
+        n = self.coefs.shape[0] - 1
+        assert X.shape[1] == n, "'X' must have {} columns.".format(n)
+        Z = X.dot(self.coefs.values[1:]) + self.coefs.values[0]
+        if isinstance(x, pd.DataFrame):
+            idx = x.index
         else:
-            X = self.__simplify__(x, 'x')
-            n = self.coefs.shape[0] - 1
-            assert X.shape[1] == n, "'X' must have {} columns.".format(n)
-            Z = X.dot(self.coefs.values[1:]) + self.coefs.values[0]
-            if isinstance(x, pd.DataFrame):
-                idx = x.index
-            else:
-                idx = np.arange(X.shape[0])
-            return pd.DataFrame(Z, index=idx, columns=self.__DV_labels__)
-
-
-
-    def __repr__(self):
-        return self.__str__()
-
-
-
-    def __str__(self):
-        t = "Y = " + (str(self.intercept) if self.fit_intercept != 0 else "")
-        for i in np.arange(len(self.coefs)):
-            t += (" + " if self.coefs[i] >= 0 else " - ") + str(abs(self.coefs[i]))
-            t +=  " X" + str(i + 1)
-        return t
+            idx = np.arange(X.shape[0])
+        return pd.DataFrame(Z, index=idx, columns=self.__DV_labels__)
 
 
 
@@ -227,7 +210,7 @@ class LinearRegression():
         """
         calculate the sum of squares of the fitted model.
         """
-        P = self.predict(self.X).flatten()
+        P = self.predict(self.X).values.flatten()
         return np.sum((P - np.mean(P, 0)) ** 2, 0)
 
 
@@ -236,7 +219,7 @@ class LinearRegression():
         """
         calculate the R-squared of the fitted model.
         """
-        return self.SS / np.sum((self.Y - np.mean(self.Y, 0)) ** 2, 0)
+        return self.SS() / np.sum((self.Y.values.flatten() - np.mean(self.Y.values.flatten())) ** 2, 0)
 
 
 
@@ -252,14 +235,14 @@ class LinearRegression():
         """
         Get the Root Mean Squared Error
         """
-        return np.sqrt(np.mean(self.residuals() ** 2, 0))
+        return np.sqrt(np.mean(self.residuals().values.flatten() ** 2, 0))
 
 
 
 class PowerRegression():
 
 
-    def __init__(self, y, x):
+    def __init__(self, y, x, alpha=None, gamma=None):
         """
         Perform the power regression of y given x according to the model:
         
@@ -271,9 +254,6 @@ class PowerRegression():
 
             x:              (1D array)
                             the array containing the indipendent variable.
-
-            digits:         (int)
-                            the number of digits available for each coefficient.
         """ 
 
         # check the entered data
@@ -286,13 +266,19 @@ class PowerRegression():
         eps = np.finfo(float).eps
         
         # get delta as the offset of y
-        self.alpha = np.min(self.y) - 1
+        if alpha is None:
+            self.alpha = np.min(self.y) - 1
+        else:
+            self.alpha = alpha
         
         # get Y (ensure no values are zero)
         Y = np.log(np.atleast_2d(y - self.alpha).T)
                 
         # get beta as the offset of x
-        self.gamma = 1 - np.min(x)
+        if gamma is None:
+            self.gamma = 1 - np.min(x)
+        else:
+            self.gamma = gamma
         
         # get X (ensure no values are zero)
         X = np.hstack([np.ones(Y.shape), np.log(np.atleast_2d(x + self.gamma).T)])
@@ -334,7 +320,6 @@ class PowerRegression():
 
 
 
-    @property
     def R2(self):
         """
         calculate the R-squared of the fitted model.
@@ -343,7 +328,6 @@ class PowerRegression():
 
 
 
-    @property
     def R2_adjusted(self):
         """
         calculate the Adjusted R-squared of the fitted model.
@@ -352,7 +336,6 @@ class PowerRegression():
 
 
 
-    @property
     def RMSE(self):
         """
         Get the Root Mean Squared Error
