@@ -62,7 +62,7 @@ class LinearRegression():
             XX = np.hstack([np.ones((XX.shape[0], 1)), XX])
         
         # get the coefficients and intercept
-        self._coefs = pd.DataFrame(sl.inv(XX.T.dot(XX)).dot(XX.T).dot(self.Y),
+        self._coefs = pd.DataFrame(sl.pinv(XX.T.dot(XX)).dot(XX.T).dot(self.Y),
                                    index=self.__IV_labels__, columns=self.__DV_labels__)
 
 
