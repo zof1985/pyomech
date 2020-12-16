@@ -2114,7 +2114,7 @@ class Anova(LinearRegression):
         ci_sup = em.copy()
         for t in tc:
             if pdf.shape[1] == 0: # parametric solution
-                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[.index, t])                # t-crit
+                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[tc.index, t])                # t-crit
                 pv.loc[pv.index, t] = st.t.sf(tv.loc[tv.index, t], df.loc[df.index, t]) # p-value
             else: # non-parametric solution
                 tc.loc[tc.index, t] = np.quantile(pdf[t].values.flatten(), al)
@@ -2179,7 +2179,7 @@ class Anova1D(LinearRegression):
 
 
 
-    def __init__(self, source, dv, iv, subjects=None, alpha=0.05, two_tailed=True, n_perm=0, exclude=[]):
+    def __init__(self, source, dv, iv, subjects=None, alpha=0.05, two_tailed=True, n_perm=0, exclude=None):
         """
         Generate an Anova class object.
 
@@ -2300,6 +2300,7 @@ class Anova1D(LinearRegression):
         self.covariates = [i for i in self.IV if isCovariate(pd.DataFrame(self.source[i]))]
 
         # check the exclusions
+        if exclude is None: exclude = []
         assert isinstance(exclude, list), "'exclude' must be a list object."
         for ex in exclude:
             ex_ck = [np.any([i == j for j in self.source.columns]) for i in ex.split(":")]
