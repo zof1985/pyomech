@@ -1117,7 +1117,7 @@ class JohnNagaoSugiura(Test):
         R = effect.residuals(effect.Y)
         SSPE = effect.P.T.dot(R.T.dot(R)).dot(effect.P)
         E = np.real(sl.eigvals(SSPE))
-        E = E[E> 0]
+        E = E[E > 0]
 
         # get the test statistic
         n, p = effect.P.shape
@@ -1416,7 +1416,8 @@ class AnovaEffect():
             gg_eps = None
         else:
             gg_eps = self.epsilon_GG()
-            gg_f = F(self.SSn, self.DFn, self.SSd, self.DFd, gg_eps, alpha, two_tailed)
+            gg_f = F(self.SSn(self.Y), self.DFn(), self.SSd(self.Y), self.DFd(),
+                     gg_eps, alpha, two_tailed)
             ln = [gg_eps, gg_f.df[0],  gg_f.df[1], gg_f.crit, gg_f.p]
 
         # dataframe
@@ -1434,7 +1435,8 @@ class AnovaEffect():
             ln = np.tile(None, 5)
         else:
             hf_eps = self.epsilon_HF()
-            hf_f = F(self.SSn, self.DFn, self.SSd, self.DFd, hf_eps, alpha, two_tailed)
+            hf_f = F(self.SSn(self.Y), self.DFn(), self.SSd(self.Y), self.DFd(),
+                     hf_eps, alpha, two_tailed)
             ln = [hf_eps, hf_f.df[0], hf_f.df[1], hf_f.crit, hf_f.p]
 
         # dataframe
@@ -1789,6 +1791,7 @@ class Anova(LinearRegression):
 
         # parallelize computation
         R = ProcessingPool(cpu_count()).map(pfun, [i for i in self.effects if i != "Intercept"])
+        # R = [pfun(i) for i in self.effects if i != "Intercept"]
         return pd.concat(R, axis=0).dropna(axis=1, how='all').apply(self.__rnd__, decimals=digits)
 
 
@@ -2081,13 +2084,16 @@ class Anova(LinearRegression):
         df.index = pd.Index(["DF"])
 
         # build the pdf
-        pdf = pd.concat([t_test(Y.iloc[p]) for p in self.permutations], axis=0)
-        if self.two_tailed and pdf.shape[0] > 0:
-            pdf = pdf.abs()
+        if self.permutations.shape[1] == 0:
+            pdf = np.atleast_2d([])
+        else:
+            pdf = pd.concat([t_test(Y.iloc[p]) for p in self.permutations], axis=0)
+            if self.two_tailed and pdf.shape[0] > 0:
+                pdf = pdf.abs()
 
         # get the degrees of freedom to extract confidence intervals in case of parametric
         # solution is required
-        if pdf.shape[0] == 0:
+        if pdf.shape[1] == 0:
             dfN = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=["DFc"])
             dfD = pd.DataFrame(np.zeros((M.shape[0], 1)), index=M.index, columns=["DFc"])
             H = M.dot(cov_scaled(Y)) * M
@@ -2107,8 +2113,8 @@ class Anova(LinearRegression):
         ci_inf = em.copy()
         ci_sup = em.copy()
         for t in tc:
-            if pdf.shape[0] == 0: # parametric solution
-                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[tc.index, t])                # t-crit
+            if pdf.shape[1] == 0: # parametric solution
+                tc.loc[tc.index, t] = st.t.isf(al, dfc.loc[.index, t])                # t-crit
                 pv.loc[pv.index, t] = st.t.sf(tv.loc[tv.index, t], df.loc[df.index, t]) # p-value
             else: # non-parametric solution
                 tc.loc[tc.index, t] = np.quantile(pdf[t].values.flatten(), al)
