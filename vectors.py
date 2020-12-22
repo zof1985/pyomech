@@ -567,7 +567,7 @@ class Vector(pd.DataFrame):
 
 
     @staticmethod
-    def angle(A, B, C):
+    def angle_by_3_vectors(A, B, C):
         """
         return the angle ABC using the Cosine theorem.
 
@@ -1229,6 +1229,84 @@ class Vector(pd.DataFrame):
 
     def plot(self, *args, **kwargs):
         return pd.DataFrame(self).plot(*args, **kwargs)
+    
+
+    def to_dict(self, *args, **kwargs):
+        return pd.DataFrame(self).to_dict(*args, **kwargs)
+
+
+    @staticmethod
+    def from_A_to_B(A, B, D=1, norm=True):
+        """
+        return the Vector C, which lies between A and B at distance D from A.
+        
+        Input:
+            A:      (pyomech.Vector)
+                    One vector.
+            
+            B:      (pyomech.Vector)
+                    Second vector.
+            
+            D:      (float)
+                    distance from A to B. By default it is considered as normalized so that
+                    1 corresponds exactly to the distance between A and B.
+                    If 'norm' is set to False, the distance is assumed to be in absolute units.
+
+            norm:   (bool)
+                    should D be considered as % of the A-B distance?.
+
+        Output:
+            C:      (pyomech.Vector)
+                    the vector from A to B at distance D.
+        """
+
+        # check the entries
+        assert Vector.match(A, B), "'A' and 'B' must be comparable vectors."
+        assert isinstance(D, (int, float)), "'D' must be numeric."
+        assert norm or not norm, "'norm' must be a bool object."
+
+        # return C
+        return A + (B - A) / (1 if norm else (B - A).module.values) * D
+
+
+    @staticmethod
+    def as_unit_vector(V):
+        """
+        return the unit Vector corresponding to V.
+        
+        Input:
+            V:      (pyomech.Vector)
+                    One vector.
+
+        Output:
+            U:      (pyomech.Vector)
+                    the unit vector with the same direction of V.
+        """
+
+        # check the entries
+        assert isinstance(V, (Vector)), "'V' must be a Vector object."
+        
+        # return C
+        return V / V.module.values
+
+
+    def orthogonal_angles(self):
+        """
+        return the angles formed by each dimension to the (hyper)plane formed by the others.
+        """
+        return Vector(
+            {d: np.arctan2(
+                    np.sqrt((self[[i for i in self.columns if i != d]] ** 2)
+                                .sum(1)
+                                .values
+                                .flatten()
+                            ),
+                    self[d].values.flatten(),
+                )
+             for d in self.columns
+             },
+            index=self.index, dim_unit="rad", type="Angle"
+            )
 
 
 
@@ -1524,8 +1602,8 @@ class ReferenceFrame():
         self.versors = V
 
         # calculate the rotation matrix
-        self._to_local = np.linalg.inv(np.vstack([i.values for i in V]))
-        self._to_global = np.linalg.inv(self._to_local)
+        self._to_global = np.vstack([i.values for i in V])
+        self._to_local = np.linalg.inv(self._to_global)
 
 
     def _build_origin(self, vector):
@@ -1596,7 +1674,6 @@ class ReferenceFrame():
         V = vector.copy()
         V.loc[V.index] = V.values.dot(self._to_global)
         return V + O
-
 
 
 
